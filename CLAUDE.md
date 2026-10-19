@@ -51,7 +51,7 @@ npx playwright test                                 # tests (le serveur est lanc
 
 ## 2. Plan d'action v0.1 (à cocher au fil de l'eau)
 
-**État : phases 0 à 4 terminées le 19/10/2026 (rien n'est encore commité). Prochaine étape : phase 5.**
+**État : phases 0 à 5 terminées le 19/10/2026. Phases 0 à 4 commitées (`2acdf2b`, local, aucun remote) ; phase 5 pas encore commitée. Prochaine étape : phase 6.**
 
 ### Phase 0 — Initialisation ✅
 - [x] `git init` (local uniquement, branche `main`).
@@ -104,8 +104,11 @@ npx playwright test                                 # tests (le serveur est lanc
 - [x] Relance sur `visibilitychange` ; rappel « pas de GPS écran verrouillé, gardez l'écran allumé » au démarrage et à chaque relance.
 - **Fin de phase** : ✔ 21 contrôles en WebKit iPhone et Chromium avec géolocalisation simulée (28 Rue de la Gare à 0 m, suivre jusqu'au 9, glisser = fin du suivi, Fait depuis l'encart, précision 45 m = rouge, Lyon = « Hors du plan (7,9 km) », position ancienne, relance, panneau/encart, arrêt, autorisation refusée).
 
-### Phase 5 — Wake Lock (`js/wakelock.js`)
-- [ ] Bouton, réacquisition au retour au premier plan, message de repli « Réglez Verrouillage auto sur Jamais pendant la tournée ».
+### Phase 5 — Wake Lock (`js/wakelock.js`) ✅
+- [x] Bouton (soleil, barre du haut), réacquisition au retour au premier plan, message de repli « Réglez Verrouillage auto sur Jamais pendant la tournée ».
+- [x] Reprise refusée hors geste : bouton « en attente » (orange) et nouvel essai au prochain toucher de l'écran.
+- [x] Au démarrage du GPS, le toast propose « Garder l'écran allumé » (action du toast généralisée : `toast(msg, {action: {label, run}})`).
+- **Fin de phase** : ✔ 13 contrôles en WebKit iPhone et Chromium avec une API Wake Lock simulée (tap, page masquée puis visible, reprise refusée puis toucher, arrêt, action du toast GPS, refus, API absente).
 
 ### Phase 6 — Export / import (`js/io.js`)
 - [ ] Export JSON via `navigator.share({files})` si `canShare`, sinon lien `download` sur blob.
@@ -389,6 +392,9 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - `navigator.wakeLock.request('screen')` sur action utilisateur (bouton).
 - Relâché automatiquement quand la page est masquée : le redemander sur `visibilitychange` si le bouton est actif.
 - API absente ou refusée : « Réglez Verrouillage auto sur Jamais pendant la tournée ».
+- `wanted` (choix de l'utilisateur) et `sentinel` (verrou tenu) sont distincts : page masquée → verrou relâché par le système, bouton « en attente » ; retour au premier plan → nouvelle demande ; si elle est refusée (hors geste, fréquent sur iOS), nouvel essai au prochain `pointerdown` du document.
+- Au premier succès de la session, le toast rappelle le réglage « Verrouillage auto » : en app installée sur iOS < 18.4, la demande peut réussir sans effet.
+- `wake.state` donne un état lisible pour le panneau debug (actif / demandé, non tenu (erreur) / inactif / non supporté).
 
 ### 8.5 Service worker (`sw.js`)
 - Précache de toute l'app et des données à l'installation, avec `{cache: 'reload'}` (Pages renvoie `max-age=600`). Cache `neyron-tournees-<VERSION>`.
@@ -508,3 +514,5 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **19/10/2026** — Phase 2 : en vue d'ensemble, points à la place des numéros et tap = zoom (évite les pointages au hasard) ; thème stocké en `localStorage` préfixé (préférence d'appareil, lue avant affichage) plutôt qu'en IndexedDB ; panneau d'adresse en bas, avec décalage automatique de la carte.
 - **19/10/2026** — Phase 3 : statuts distincts par la forme (estompé / pastille) et pas seulement par la couleur, à cause des collisions avec les couleurs de rues ; tournée par défaut à id fixe `default` ; panneau d'adresse limité aux actions qui changent le statut, fermé après l'action, toast avec « Annuler ».
 - **19/10/2026** — Phase 4 : bouton GPS unique à trois états (localiser / suivre / arrêter) ; le pincement ne coupe pas le suivi ; encart figé pendant un appui (protection contre un « Fait » sur la mauvaise ligne) ; toasts déplacés en haut.
+- **19/10/2026** — Premier commit `2acdf2b` (phases 0 à 4), à la demande de l'utilisateur ; pas de remote.
+- **19/10/2026** — Phase 5 : écran allumé proposé directement depuis le toast de démarrage du GPS ; reprise du verrou au prochain toucher si iOS la refuse au retour au premier plan.

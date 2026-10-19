@@ -274,7 +274,9 @@ export class UI {
     }
     $('toast-action').addEventListener('click', () => {
       $('toast').hidden = true;
-      this.undo();
+      const action = this._toastAction;
+      this._toastAction = null;
+      if (action) action.run();
     });
     window.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
@@ -344,10 +346,16 @@ export class UI {
 
   // ---------------------------------------------------- toast, confirmation
 
-  toast(msg, { undo = false, ms = undo ? 5000 : 2200 } = {}) {
+  // action : {label, run} ; undo: true est un raccourci pour l'action « Annuler »
+  toast(msg, { undo = false, action = null, ms } = {}) {
+    if (undo) action = { label: 'Annuler', run: () => this.undo() };
     const t = $('toast');
     $('toast-msg').textContent = msg;
-    $('toast-action').hidden = !undo;
+    const btn = $('toast-action');
+    btn.hidden = !action;
+    if (action) btn.textContent = action.label;
+    this._toastAction = action;
+    ms ??= action ? 5000 : 2200;
     t.hidden = false;
     clearTimeout(this._toastTimer);
     this._toastTimer = setTimeout(() => { t.hidden = true; }, ms);

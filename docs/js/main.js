@@ -4,6 +4,7 @@ import { GpsController } from './gps.js';
 import { MapView } from './map.js';
 import { Store } from './store.js';
 import { UI } from './ui.js';
+import { WakeLockController } from './wakelock.js';
 
 async function loadJSON(url) {
   const res = await fetch(url);
@@ -20,7 +21,9 @@ async function start() {
     const ui = new UI(map, data, store);
     const gps = new GpsController({ map, ui, store, data });
     ui.onSheet(() => gps.refresh());
-    window.neyronApp = { map, ui, data, store, gps };  // accès pour le panneau debug et les tests
+    const wake = new WakeLockController({ ui });
+    gps.wake = wake;
+    window.neyronApp = { map, ui, data, store, gps, wake };  // accès pour le panneau debug et les tests
     splash.hidden = true;
     if (store.error) ui.toast(`Stockage indisponible (${store.error.message}) : la progression ne sera pas conservée`, { ms: 8000 });
     store.requestPersist();

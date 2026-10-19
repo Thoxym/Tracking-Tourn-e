@@ -169,10 +169,16 @@ export class GpsController {
     if (!this.tracker.start()) return;
     this.centerOnNextFix = true;
     this.setMode('on');
-    if (!this.remindedBackground) {
-      this.remindedBackground = true;
+    const wake = this.wake;  // WakeLockController, branché par main.js
+    if (wake && wake.supported && !wake.wanted) {
+      this.ui.toast('Le GPS s\'arrête quand l\'écran est verrouillé.', {
+        action: { label: 'Garder l\'écran allumé', run: () => wake.enable() },
+        ms: 8000,
+      });
+    } else if (!this.remindedBackground && !(wake && wake.wanted)) {
       this.ui.toast('Le GPS s\'arrête quand l\'écran est verrouillé : gardez l\'écran allumé pendant la tournée.', { ms: 5000 });
     }
+    this.remindedBackground = true;
   }
 
   stop() {

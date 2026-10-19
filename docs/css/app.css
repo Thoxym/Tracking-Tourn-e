@@ -157,6 +157,18 @@ button { font: inherit; color: inherit; }
 .iconbtn:active, .chip:active { transform: scale(0.96); }
 .iconbtn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #ffffff; }
 .iconbtn:disabled { opacity: 0.4; box-shadow: none; cursor: default; transform: none; }
+.iconbtn { position: relative; }
+.wake.pending { background: var(--surface); color: var(--repasser); border-color: var(--repasser); }
+.wake.pending::after {  /* verrou demandé mais pas tenu (page revenue au premier plan sans geste) */
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--repasser);
+}
 
 .btn, .act {
   appearance: none;
