@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self'; connect-src 'self'">
+  <meta name="referrer" content="no-referrer">
+  <title>Tournées Neyron</title>
+  <meta name="description" content="Plan des tournées de Neyron : pointage des numéros et position GPS, hors ligne.">
+  <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#14171c" media="(prefers-color-scheme: dark)">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Tournées">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="js/theme-init.js"></script>
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <div id="app">
+    <div id="map" aria-label="Plan de Neyron"></div>
+
+    <header class="topbar">
+      <button id="btn-legend" class="chip" type="button" aria-expanded="false" aria-controls="legend">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1.2"/><circle cx="4" cy="12" r="1.2"/><circle cx="4" cy="18" r="1.2"/></svg>
+        <span>Rues</span>
+        <span id="total-progress" class="pill">0/229</span>
+      </button>
+      <div class="spacer"></div>
+      <button id="btn-undo" class="iconbtn" type="button" aria-label="Annuler la dernière action" title="Annuler la dernière action" disabled>
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+      </button>
+      <button id="btn-theme" class="iconbtn" type="button" aria-label="Thème : automatique" title="Thème">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path class="fill" d="M12 4a8 8 0 0 1 0 16z"/></svg>
+      </button>
+    </header>
+
+    <aside id="legend" class="legend panel" hidden aria-label="Rues de la tournée">
+      <div class="legend-head">
+        <h2>Rues de la tournée</h2>
+        <button id="btn-legend-close" class="iconbtn flat" type="button" aria-label="Fermer la légende">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <ul id="legend-list" class="legend-list"></ul>
+      <p class="legend-hint">Case : afficher / masquer · Nom : zoomer sur la rue · ✓✓ : toute la rue faite</p>
+    </aside>
+
+    <div class="mapctl">
+      <button id="btn-locate" class="iconbtn locate" type="button" data-mode="off" aria-pressed="false" aria-label="Localiser" title="Localiser">
+        <svg class="ico ico-off" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        <svg class="ico ico-on" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle class="fill" cx="12" cy="12" r="3.2"/></svg>
+        <svg class="ico ico-follow" viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M12 2.5l7.5 18.5-7.5-4.2-7.5 4.2z"/></svg>
+      </button>
+      <button id="btn-zoom-in" class="iconbtn" type="button" aria-label="Zoomer">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button id="btn-zoom-out" class="iconbtn" type="button" aria-label="Dézoomer">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+      </button>
+      <button id="btn-fit" class="iconbtn" type="button" aria-label="Voir tout le plan">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>
+      </button>
+    </div>
+
+    <section id="nearby" class="nearby panel" hidden aria-label="Adresses non faites les plus proches">
+      <div class="nearby-head"><span id="gps-indicator" class="gps-ind"></span><span id="gps-status">Recherche du signal GPS…</span></div>
+      <ol id="nearby-list" class="nearby-list"></ol>
+    </section>
+
+    <div id="scalebar" class="scalebar" aria-hidden="true"><span class="scalebar-bar"></span><span class="scalebar-label"></span></div>
+
+    <section id="sheet" class="sheet panel" hidden aria-live="polite">
+      <div class="sheet-head">
+        <div>
+          <h2 id="sheet-title"></h2>
+          <p class="muted"><span id="sheet-status" class="badge"></span> <span id="sheet-sub"></span></p>
+        </div>
+        <button id="btn-sheet-close" class="iconbtn flat" type="button" aria-label="Fermer">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div id="sheet-actions" class="sheet-actions">
+        <button class="act act-fait" type="button" data-st="fait">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Fait
+        </button>
+        <button class="act act-a_repasser" type="button" data-st="a_repasser">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>À repasser
+        </button>
+        <button class="act act-a_faire" type="button" data-st="a_faire">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>Remettre à faire
+        </button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast" hidden role="status">
+      <span id="toast-msg"></span>
+      <button id="toast-action" class="toast-action" type="button" hidden>Annuler</button>
+    </div>
+
+    <dialog id="confirm" class="dialog panel">
+      <form method="dialog">
+        <p id="confirm-msg"></p>
+        <div class="dialog-actions">
+          <button class="btn" type="submit" value="cancel">Non</button>
+          <button id="confirm-ok" class="btn primary" type="submit" value="ok">Confirmer</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="loading" class="splash">
+      <p id="loading-msg">Chargement du plan…</p>
+    </div>
+  </div>
+</body>
+</html>

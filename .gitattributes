@@ -1,0 +1,6 @@
+# LF partout : le hash de version (build.py --stamp) doit correspondre aux fichiers servis par Pages
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.gz  binary

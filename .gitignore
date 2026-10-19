@@ -1,0 +1,33 @@
+# Sources BAN + cadastre : jamais commitées (volumineuses, rechargeables)
+sources/
+/*.csv
+/*.csv.gz
+/*.json.gz
+/*.json
+!/package.json
+!/package-lock.json
+
+# Intermédiaires du pipeline
+work/
+
+# Données personnelles : progression, exports, traces
+exports/
+*.gpx
+progress*.json
+neyron-tournees-export*.json
+
+# Outillage
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+__pycache__/
+*.pyc
+.venv/
+
+# Éditeurs / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

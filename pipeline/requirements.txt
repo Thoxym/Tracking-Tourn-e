@@ -1,0 +1,6 @@
+shapely>=2.0
+pyproj>=3.6
+scipy>=1.11
+numpy>=1.26
+pandas>=2.0
+pillow>=10.0
