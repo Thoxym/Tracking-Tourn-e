@@ -1,11 +1,14 @@
 // Tests de bout en bout : `npx playwright test`. La config lance son propre serveur statique sur le
 // port 8100 (tests/serve.py), distinct du serveur de développement (8000). Chaque test part d'un
 // contexte neuf : IndexedDB, caches et service worker vides.
+// Contre le site en ligne : BASE_URL=https://thoxym.github.io/Tracking-Tourn-e/ npx playwright test
+// (pas de serveur local ; le site doit correspondre au commit courant, cf. version de sw.js).
 const { defineConfig, devices } = require('@playwright/test');
 const { PYTHON, SERVE } = require('./tests/helpers');
 
 const PORT = 8100;
-const BASE_URL = `http://127.0.0.1:${PORT}/`;
+const LOCAL_URL = `http://127.0.0.1:${PORT}/`;
+const BASE_URL = process.env.BASE_URL || LOCAL_URL;
 
 module.exports = defineConfig({
   testDir: 'tests',
@@ -27,10 +30,10 @@ module.exports = defineConfig({
     { name: 'webkit-iphone', use: { ...devices['iPhone 13'] } },
     { name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
   ],
-  webServer: {
+  webServer: process.env.BASE_URL ? undefined : {
     // http.server avec une file d'attente plus longue, sur la boucle locale uniquement
     command: `${PYTHON} "${SERVE}" docs ${PORT}`,
-    url: BASE_URL,
+    url: LOCAL_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 20_000,
   },
