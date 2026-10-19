@@ -51,7 +51,7 @@ npx playwright test                                 # tests (le serveur est lanc
 
 ## 2. Plan d'action v0.1 (à cocher au fil de l'eau)
 
-**État : phases 0 à 6 terminées le 19/10/2026. Commits locaux `2acdf2b` (phases 0-4) et `abc2685` (phase 5), aucun remote ; phase 6 pas encore commitée. Prochaine étape : phase 7.**
+**État : phases 0 à 7 terminées le 19/10/2026. Commits locaux `2acdf2b` (phases 0-4), `abc2685` (phase 5), `9b03e31` (phase 6), aucun remote ; phase 7 pas encore commitée. Prochaine étape : phase 8.**
 
 ### Phase 0 — Initialisation ✅
 - [x] `git init` (local uniquement, branche `main`).
@@ -116,10 +116,13 @@ npx playwright test                                 # tests (le serveur est lanc
 - [x] Menu « ⋮ » (barre du haut) : Exporter, Importer, Thème (déplacé depuis la barre), versions app / données en pied.
 - **Fin de phase** : ✔ 23 contrôles en WebKit iPhone et Chromium : export (téléchargement, partage simulé, partage annulé), **export puis import sur un autre appareil : état identique**, conservé après rechargement, réimport sans doublon, réimport sur l'appareil d'origine, JSON invalide, fichier étranger, fichier piégé (5 entrées invalides ignorées, champ inconnu retiré, adresse inconnue signalée), refus de la confirmation.
 
-### Phase 7 — Panneau debug (`js/debug.js`, `?debug=1`)
-- [ ] Précision GPS, âge de la dernière position, état Wake Lock, résultat `storage.persist()`, `storage.estimate()`, mode standalone ou non, état du service worker, version app et données.
-- [ ] Appui long (≥ 600 ms sans bouger) sur la carte = position simulée.
-- [ ] Bouton « Copier le diagnostic ».
+### Phase 7 — Panneau debug (`js/debug.js`, `?debug=1`) ✅
+- [x] Précision GPS, âge de la dernière position, état Wake Lock, résultat `storage.persist()`, `storage.estimate()`, mode standalone ou non, état du service worker, version app et données (+ build, écran, réseau, journal, appareil, dernier export, zoom, dernière erreur GPS).
+- [x] Appui long (≥ 600 ms sans bouger) sur la carte = position simulée (coupe le vrai GPS ; ne vieillit pas).
+- [x] Bouton « Copier le diagnostic » (presse-papiers, repli `execCommand`, texte sélectionnable).
+- [x] Activation sans paramètre d'URL : **5 taps sur la ligne de version du menu** (l'app installée s'ouvre toujours sur `./`) ; choix mémorisé ; `?debug=0` désactive.
+- [x] Journal des 15 dernières erreurs JS et promesses rejetées, toujours collecté.
+- **Fin de phase** : ✔ 20 contrôles en WebKit iPhone et Chromium (sans debug : rien ; `?debug=1` ; mémorisation ; appui long sur le 28 = « 28 Rue de la Gare · 0 m » ; erreurs reprises ; copie ; réduire ; `?debug=0` ; 5 taps aller-retour).
 
 ### Phase 8 — Service worker et manifest (`docs/sw.js`, `docs/manifest.webmanifest`)
 - [ ] Manifest : `start_url: "./"`, `scope: "./"`, `display: "standalone"`, icônes.
@@ -472,7 +475,8 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   5. export puis import : état identique ;
   6. hors ligne (`context.setOffline(true)`) après une première visite : l'app se charge.
 - **Pipeline** : les assertions de comptage et de résidu font office de tests.
-- **iPhone** : uniquement via l'URL GitHub Pages, après un push ; utiliser `?debug=1`.
+- **iPhone** : uniquement via l'URL GitHub Pages, après un push. Debug : `?debug=1` dans Safari ; **dans l'app installée, 5 taps rapides sur la ligne de version du menu ⋮** (son stockage est séparé de Safari et elle ne reçoit pas de paramètre d'URL). Réduire le panneau pour dégager la carte avant un appui long.
+- Les scripts de vérification de chaque phase (Playwright) ont tourné dans le dossier de travail de Claude ; la phase 9 les reprend comme vrais tests dans `tests/`.
 
 ---
 
@@ -523,3 +527,4 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **19/10/2026** — Premier commit `2acdf2b` (phases 0 à 4), à la demande de l'utilisateur ; pas de remote.
 - **19/10/2026** — Phase 5 : écran allumé proposé directement depuis le toast de démarrage du GPS ; reprise du verrou au prochain toucher si iOS la refuse au retour au premier plan.
 - **19/10/2026** — Commit `abc2685` (phase 5). Phase 6 : menu « ⋮ » qui regroupe Exporter / Importer / Thème (le bouton thème quitte la barre pour libérer de la place sur iPhone) ; import validé strictement et confirmé avant fusion.
+- **19/10/2026** — Commit `9b03e31` (phase 6). Phase 7 : debug activable dans l'app installée par 5 taps sur la version (pas de paramètre d'URL possible) ; journal d'erreurs JS toujours collecté ; position simulée qui coupe le vrai GPS ; panneau limité à 38 % de la hauteur sur téléphone.

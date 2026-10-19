@@ -593,6 +593,53 @@ button { font: inherit; color: inherit; }
   pointer-events: none;
 }
 
+/* ------------------------------------------------------------ debug */
+
+.debug {
+  position: absolute;
+  z-index: 28;
+  top: calc(var(--safe-t) + var(--gap) + var(--tap) + 8px);
+  right: calc(var(--safe-r) + var(--gap));
+  width: min(380px, calc(100vw - var(--safe-l) - var(--safe-r) - 2 * var(--gap)));
+  max-height: 48dvh;
+  display: flex;
+  flex-direction: column;
+  border-color: var(--repasser);
+  overflow: hidden;
+}
+.debug-head { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 12px; border-bottom: 1px solid var(--border); }
+.debug-head strong { flex: 1; font-size: 13px; color: var(--repasser); letter-spacing: 0.04em; text-transform: uppercase; }
+.debug-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.debug-body {
+  margin: 0;
+  padding: 8px 12px;
+  overflow: auto;
+  font: 11.5px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
+  overscroll-behavior: contain;
+}
+.debug-hint { margin: 0; padding: 6px 12px 8px; font-size: 12px; color: var(--text-2); border-top: 1px solid var(--border); }
+.debug.collapsed .debug-body, .debug.collapsed .debug-hint { display: none; }
+.debug.collapsed { width: auto; }
+@media (max-width: 600px) {
+  .debug { max-height: 38dvh; }  /* laisser de la carte visible pour l'appui long */
+}
+.debug.collapsed .debug-head { border-bottom: 0; }
+
 /* -------------------------------------------------------------- GPS */
 
 .locate .ico-on, .locate .ico-follow { display: none; }

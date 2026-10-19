@@ -114,7 +114,7 @@ export class GpsTracker {
 
   quality() {
     if (!this.last) return null;
-    if (this.age() > STALE_S) return 'stale';
+    if (this.last.source !== 'simulation' && this.age() > STALE_S) return 'stale';  // une simulation ne vieillit pas
     return this.last.acc <= 10 ? 'good' : this.last.acc <= 30 ? 'mid' : 'bad';
   }
 }
@@ -186,6 +186,13 @@ export class GpsController {
     this.setMode('off');
   }
 
+  // position simulée (panneau debug : appui long) ; le vrai GPS est coupé pour ne pas l'écraser
+  simulate(x, y, acc = 5) {
+    if (this.tracker.watching) this.tracker.stop();
+    if (this.mode === 'off') this.setMode('on');
+    this.tracker.inject(x, y, acc);
+  }
+
   setMode(mode) {
     this.mode = mode;
     this._applyMode();
@@ -214,6 +221,7 @@ export class GpsController {
   }
 
   _onError(e) {
+    this.lastError = { code: e.code, message: e.message, at: Date.now() };
     if (e.code === 1) {
       this.setMode('off');
       this.ui.toast('Localisation refusée : autorisez-la dans Réglages › Confidentialité › Service de localisation.', { ms: 7000 });
