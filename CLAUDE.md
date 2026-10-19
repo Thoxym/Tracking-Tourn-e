@@ -52,7 +52,7 @@ npx playwright test                                 # tests (serveur lancé par 
 
 ## 2. Plan d'action v0.1 (à cocher au fil de l'eau)
 
-**État : phases 0 à 9 terminées le 19/10/2026. Commits locaux `2acdf2b` (phases 0-4), `abc2685` (5), `9b03e31` (6), `27a38a9` (7), `50a06ba` (8) ; remote `origin` = github.com/Thoxym/Tracking-Tourn-e (privé, créé et poussé jusqu'à `50a06ba` par l'utilisateur, Pages inactif) ; phase 9 et audit de sécurité pas encore commités. Prochaine étape : phase 10 (déploiement, uniquement avec accord explicite).**
+**État : phases 0 à 9 terminées, phase 10 déployée le 19/10/2026 : app en ligne sur https://thoxym.github.io/Tracking-Tourn-e/ (dépôt public github.com/Thoxym/Tracking-Tourn-e, `main`, Pages sur `/docs`). Historique réécrit en e-mail `noreply` (identifiants des commits changés : `2ccfec2` phases 0-4 … `6fd0887` phase 9, `9f7d545` BASE_URL). Reste : checklist iPhone (§3) par l'utilisateur. Tout nouveau push reste soumis à son accord (règle 3).**
 
 ### Phase 0 — Initialisation ✅
 - [x] `git init` (local uniquement, branche `main`).
@@ -137,10 +137,12 @@ npx playwright test                                 # tests (serveur lancé par 
 - [x] `build.py --check` : échoue si `docs/` a changé sans stamp ; appelé par les tests.
 - **Fin de phase** : ✔ `npx playwright test` vert. 25 tests × 2 navigateurs (un seul passage pour le stamp) : 49 réussis, 1 ignoré, 48 s. Stable sur 3 répétitions ; sabotages volontaires détectés.
 
-### Phase 10 — Déploiement (uniquement avec accord explicite)
-- [ ] Création du dépôt **public** (interface web GitHub ou `gh`), push de `main`.
-- [ ] Pages : « Deploy from a branch », `main`, dossier `/docs`.
-- [ ] Checklist iPhone (§3).
+### Phase 10 — Déploiement (uniquement avec accord explicite) — en ligne
+- [x] Dépôt **public** `Thoxym/Tracking-Tourn-e`, recréé vide par l'utilisateur (l'ancien dépôt privé portait l'e-mail personnel dans des commits accessibles par identifiant) ; push de `main` (`9f7d545`).
+- [x] Pages : « Deploy from a branch », `main`, dossier `/docs` ; HTTPS imposé. Premier déploiement en erreur 502 côté GitHub (« Creating Pages deployment failed ») : une simple relance du job a suffi.
+- [x] Ruleset `protect-main` (branche par défaut, aucune exception) : suppression et force-push interdits.
+- [x] Site vérifié : types MIME corrects, HSTS 1 an, `http://` → 301, **51 tests réussis contre le site en ligne** (`BASE_URL=… npx playwright test`).
+- [ ] Checklist iPhone (§3), par l'utilisateur.
 
 ---
 
@@ -437,7 +439,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 ### Mise en place
 - Pages en « Deploy from a branch », branche `main`, dossier **`/docs`** ; `docs/.nojekyll` vide ; aucun workflow Actions nécessaire.
 - Le pipeline tourne **en local** ; les sources ne sont pas dans le dépôt. `docs/data/` (quelques Mo) **est commité**.
-- `gh` est absent : dépôt créé via l'interface web (ou après installation de `gh`), **avec accord explicite**.
+- `gh` est absent : réglages GitHub faits par l'utilisateur dans l'interface web. URL : **https://thoxym.github.io/Tracking-Tourn-e/**. Le warning « Node.js 20 is deprecated » du workflow interne « pages build and deployment » est sans conséquence (workflow géré par GitHub).
 - Un push sur `main` est en ligne en 1 à 2 min ; c'est le moyen de tester sur l'iPhone (HTTPS exigé, pas de certificat local).
 
 ### Conséquences de l'hébergement
@@ -469,8 +471,8 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   - Une faille ou un script tiers ajouté à l'un d'eux (aujourd'hui : polices Google en CSS et images externes, pas de script tiers ni de construction risquée) aurait accès à l'IndexedDB et aux caches de l'app.
   - Il pourrait **empoisonner le cache** du SW : injection persistante, donc exfiltration GPS.
   - Il hériterait aussi de l'**autorisation de localisation** accordée à l'origine.
-  - Parade : une origine dédiée (organisation GitHub gratuite → `<org>.github.io`, ou domaine personnalisé). **À décider avant le premier déploiement** (changer d'origine plus tard = stockage vide).
-- **Dépôt public** : les commits portent le nom complet et l'e-mail de l'utilisateur. Passer à l'e-mail `noreply` de GitHub et réécrire l'auteur des commits (dépôt encore privé, réécriture sans conséquence) avant de le rendre public.
+  - Parade possible : une origine dédiée (organisation GitHub gratuite → `<org>.github.io`, ou domaine personnalisé). **Décision de l'utilisateur : rester sur `thoxym.github.io`**, risque accepté, à condition de **ne jamais ajouter de script tiers** (analytics, widgets, CDN) aux autres sites du compte. Migrer plus tard = stockage vide (export/import).
+- **Dépôt public** : commits en `182675505+Thoxym@users.noreply.github.com` (réglé dans la config **locale** du dépôt ; historique réécrit, dépôt recréé pour ne laisser aucun ancien commit accessible). Le nom complet reste affiché (choix de l'utilisateur).
 - **Cadrage (clickjacking)** : impossible à interdire par en-tête sur Pages. Impact faible : un site tiers qui encadre l'app ne peut rien lire (origine différente), au pire provoquer des taps.
 - **Chaîne d'approvisionnement** : rien de tiers à l'exécution. Playwright et les libs Python ne tournent que sur le PC. Des données sources piégées ne peuvent pas injecter de script (`textContent`, `setAttribute('d')`). L'import piégé est testé.
 
@@ -506,6 +508,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 
 - **Bureau** : `python -m http.server -d docs 8000`, http://localhost:8000 (contexte sécurisé : géolocalisation et SW fonctionnent).
 - **Playwright** : `npx playwright test` (ou `npm test`), ~50 s, 8 workers. Projets `webkit-iphone` (iPhone 13) et `chromium` (bureau 1280 × 800). La config lance **son propre serveur** `tests/serve.py` sur **http://127.0.0.1:8100** (boucle locale, file d'attente de 256 connexions, §10), distinct du serveur de dev (8000). Chaque test part d'un contexte neuf (IndexedDB, caches, SW vides). Rapport : `npx playwright show-report` ; trace conservée en cas d'échec.
+- **Contre le site en ligne**, après un push : `BASE_URL=https://thoxym.github.io/Tracking-Tourn-e/ npx playwright test` (PowerShell : `$env:BASE_URL='…'; npx playwright test`). Pas de serveur local. Le site doit servir le commit courant : les tests comparent la version avec celle de `docs/sw.js`. Compter 1 à 3 min de publication après le push.
 - Les 6 cas de référence, et les fichiers qui les couvrent :
   1. chargement du plan (229 numéros pointables, contexte en gris) → `plan.spec.js` ;
   2. tap sur un numéro, Fait : l'état persiste après rechargement → `pointage.spec.js` ;
@@ -595,4 +598,11 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   - message explicite en HTTP (`isSecureContext`) : l'iPhone testait sur `http://192.168.1.x:8000`, d'où « localisation refusée » ;
   - message de refus GPS avec le chemin iOS.
 
-  Le dépôt `github.com/Thoxym/Tracking-Tourn-e` (privé, Pages inactif) a été créé et poussé par l'utilisateur. **Décisions en attente** : origine dédiée ou `thoxym.github.io` partagé avec deux autres sites ; e-mail `noreply` et réécriture des auteurs avant passage en public.
+  Le dépôt `github.com/Thoxym/Tracking-Tourn-e` (privé, Pages inactif) avait été créé et poussé par l'utilisateur.
+- **19/10/2026** — Phase 10, décisions de l'utilisateur :
+  - origine `thoxym.github.io` conservée (partagée avec `programme-3ans` et `programme2026-st-leger`, risque accepté) ;
+  - e-mail `noreply` et réécriture de l'historique ; plutôt qu'un force-push, qui laisserait les anciens commits visibles via l'onglet Activity, le dépôt a été supprimé puis recréé public et vide ;
+  - nom de dépôt `Tracking-Tourn-e` conservé ;
+  - ruleset sur `main`.
+
+  Le serveur de dev (`http.server` sur toutes les interfaces, journal des requêtes en local) a été arrêté. Tests rendus lançables contre le site en ligne (`BASE_URL`).
