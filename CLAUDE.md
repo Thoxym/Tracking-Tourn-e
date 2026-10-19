@@ -51,7 +51,7 @@ npx playwright test                                 # tests (le serveur est lanc
 
 ## 2. Plan d'action v0.1 (à cocher au fil de l'eau)
 
-**État : phases 0 à 7 terminées le 19/10/2026. Commits locaux `2acdf2b` (phases 0-4), `abc2685` (phase 5), `9b03e31` (phase 6), aucun remote ; phase 7 pas encore commitée. Prochaine étape : phase 8.**
+**État : phases 0 à 8 terminées le 19/10/2026. Commits locaux `2acdf2b` (phases 0-4), `abc2685` (5), `9b03e31` (6), `27a38a9` (7), aucun remote ; phase 8 pas encore commitée. Prochaine étape : phase 9.**
 
 ### Phase 0 — Initialisation ✅
 - [x] `git init` (local uniquement, branche `main`).
@@ -124,11 +124,11 @@ npx playwright test                                 # tests (le serveur est lanc
 - [x] Journal des 15 dernières erreurs JS et promesses rejetées, toujours collecté.
 - **Fin de phase** : ✔ 20 contrôles en WebKit iPhone et Chromium (sans debug : rien ; `?debug=1` ; mémorisation ; appui long sur le 28 = « 28 Rue de la Gare · 0 m » ; erreurs reprises ; copie ; réduire ; `?debug=0` ; 5 taps aller-retour).
 
-### Phase 8 — Service worker et manifest (`docs/sw.js`, `docs/manifest.webmanifest`)
-- [ ] Manifest : `start_url: "./"`, `scope: "./"`, `display: "standalone"`, icônes.
-- [ ] Précache complet avec `{cache: 'reload'}`, cache `neyron-tournees-<VERSION>`, cache d'abord, purge des anciens caches.
-- [ ] Bandeau « Nouvelle version disponible — Recharger » → `SKIP_WAITING` → rechargement sur `controllerchange`.
-- **Fin de phase** : rechargement hors ligne OK dans le navigateur de bureau.
+### Phase 8 — Service worker et manifest (`docs/sw.js`, `docs/manifest.webmanifest`, `docs/js/pwa.js`) ✅
+- [x] Manifest : `id`/`start_url`/`scope` `"./"`, `display: "standalone"`, icônes 192/512 + maskable, `lang: "fr"` ; lié dans `index.html`.
+- [x] Précache complet (21 fichiers) avec `{cache: 'reload'}`, cache `neyron-tournees-<VERSION>`, cache d'abord, purge des anciens caches `neyron-tournees-*` uniquement, `clients.claim()`.
+- [x] Bandeau « Nouvelle version disponible — Recharger » → `SKIP_WAITING` → rechargement sur `controllerchange` (seulement si l'utilisateur l'a demandé) ; `reg.update()` au retour au premier plan (≥ 30 min d'écart).
+- **Fin de phase** : ✔ 14 contrôles en Chromium et WebKit (profil iPhone) : précache complet, page contrôlée dès la première visite sans rechargement ni bandeau, **rechargement hors ligne OK** (avec `?debug=1` aussi), pointage hors ligne conservé, mise à jour simulée sur un second serveur (bandeau, pas de rechargement imposé, « Recharger », nouveau cache, ancien supprimé, cache d'un autre site conservé). Chromium : aucune erreur d'installabilité ni de manifest.
 
 ### Phase 9 — Tests Playwright (`tests/`, `playwright.config.js`)
 - [ ] Projets WebKit (profil iPhone) et Chromium ; `webServer` = `python -m http.server -d docs 8000`.
@@ -241,7 +241,7 @@ neyron-tournees/
 │   ├── manifest.webmanifest
 │   ├── sw.js
 │   ├── css/app.css
-│   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js
+│   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, version.json (ne pas lire)
 └── tests/                # Playwright
@@ -410,7 +410,11 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **Cache d'abord**, sans aucun appel réseau bloquant. Navigation → `./index.html` en cache.
 - Suppression des anciens caches `neyron-tournees-*` à l'activation (ne pas toucher aux caches d'autres sites de l'origine).
 - Mise à jour : nouvelle version détectée → bandeau « Nouvelle version disponible — Recharger » → `postMessage({type: 'SKIP_WAITING'})` → rechargement sur `controllerchange`.
-- Enregistrement : `navigator.serviceWorker.register('./sw.js', {scope: './'})`.
+- Enregistrement : `navigator.serviceWorker.register('./sw.js', {scope: './'})`, dans `pwa.js`, appelé au chargement du module principal (avant le plan).
+- `clients.claim()` à l'activation : dès la première visite, la page est contrôlée et l'app fonctionne hors ligne sans rechargement. La prise de contrôle de la première installation ne recharge pas la page (rechargement seulement après « Recharger »).
+- **Détection d'une mise à jour** : un worker en attente (`reg.waiting`) alors que la page était **déjà contrôlée par une version précédente** (au chargement, ou depuis la fin de la première installation). Ne pas se fier à `navigator.serviceWorker.controller` seul (piège WebKit, §10).
+- Navigations (dont `?debug=1`) → `./index.html` du cache ; autres requêtes → cache avec `ignoreSearch`, réseau seulement hors précache. Requêtes d'une autre origine ou hors du scope : non interceptées.
+- **Développement local** : avec le cache d'abord, une modification de JS/CSS n'apparaît qu'après `python pipeline/build.py --stamp` puis rechargement (bandeau « Recharger »). Les tests Playwright partent d'un contexte neuf et ne sont pas concernés.
 
 ### 8.6 Spécificités iOS
 - `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">` ; `env(safe-area-inset-*)` et `100dvh`.
@@ -458,6 +462,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   - stockage de l'app installée séparé de Safari : ne pas pointer dans Safari ;
   - WebKit de Playwright sous Windows ≠ Safari iOS : les tests ne remplacent pas l'essai sur l'iPhone.
 - **Playwright + WebKit : `boundingBox()` des `<text>` SVG est faux** (coordonnées aberrantes, ex. x = −1345). Pour taper un numéro dans un test, calculer la position avec `neyronApp.map.toScreen(a.x, a.y)` et taper `#map` à cette position. Sous le zoom `K_NUMBERS`, les numéros sont masqués : zoomer d'abord.
+- **WebKit et première installation du service worker** : la page est rattachée au nouveau worker (`clients.claim`) **avant** que celui-ci signale `installed`, alors qu'il est encore `waiting`. Un test « `reg.waiting && controller` » affiche donc un faux bandeau « Nouvelle version » à la première visite. Critère retenu : page déjà contrôlée par une version précédente (§8.5).
 - **Playwright + Chromium, géolocalisation simulée** : `setGeolocation` avec les mêmes coordonnées et une autre précision ne déclenche pas de nouvelle position ; décaler légèrement la position dans les tests.
 - **Safari et pincement de page** : iOS ignore `user-scalable=no` ; les `gesturestart/change` sont bloqués au niveau du document, et sur macOS le pincement trackpad (événements `gesture*` sans pointeur actif) zoome la carte.
 - **v0.2 (PDF reportlab)** : le mode de rendu du texte (`Tr`) persiste → entourer les halos de `saveState()` / `restoreState()` ; exposants et indices Unicode non rendus.
@@ -528,3 +533,4 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **19/10/2026** — Phase 5 : écran allumé proposé directement depuis le toast de démarrage du GPS ; reprise du verrou au prochain toucher si iOS la refuse au retour au premier plan.
 - **19/10/2026** — Commit `abc2685` (phase 5). Phase 6 : menu « ⋮ » qui regroupe Exporter / Importer / Thème (le bouton thème quitte la barre pour libérer de la place sur iPhone) ; import validé strictement et confirmé avant fusion.
 - **19/10/2026** — Commit `9b03e31` (phase 6). Phase 7 : debug activable dans l'app installée par 5 taps sur la version (pas de paramètre d'URL possible) ; journal d'erreurs JS toujours collecté ; position simulée qui coupe le vrai GPS ; panneau limité à 38 % de la hauteur sur téléphone.
+- **19/10/2026** — Commit `27a38a9` (phase 7). Phase 8 : `clients.claim()` pour être hors ligne dès la première visite ; mise à jour jamais imposée (bandeau) ; vérification de mise à jour au retour au premier plan (app installée rarement rechargée) ; critère de mise à jour robuste au comportement de WebKit.

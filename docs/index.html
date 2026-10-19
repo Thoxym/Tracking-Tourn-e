@@ -16,6 +16,7 @@
   <meta name="format-detection" content="telephone=no">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="css/app.css">
   <script src="js/theme-init.js"></script>
   <script type="module" src="js/main.js"></script>
@@ -113,6 +114,11 @@
         </button>
       </div>
     </section>
+
+    <div id="update-banner" class="banner panel" hidden role="status">
+      <span>Nouvelle version disponible</span>
+      <button id="btn-update" class="btn primary" type="button">Recharger</button>
+    </div>
 
     <div id="toast" class="toast" hidden role="status">
       <span id="toast-msg"></span>

@@ -4,6 +4,7 @@ import { DebugPanel } from './debug.js';
 import { GpsController } from './gps.js';
 import { BackupController } from './io.js';
 import { MapView } from './map.js';
+import { registerServiceWorker } from './pwa.js';
 import { Store } from './store.js';
 import { UI } from './ui.js';
 import { WakeLockController } from './wakelock.js';
@@ -13,6 +14,8 @@ async function loadJSON(url) {
   if (!res.ok) throw new Error(`${url} : HTTP ${res.status}`);
   return res.json();
 }
+
+registerServiceWorker();  // au plus tôt, indépendamment du chargement du plan
 
 async function start() {
   const splash = document.getElementById('loading');

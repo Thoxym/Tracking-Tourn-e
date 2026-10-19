@@ -551,6 +551,26 @@ button { font: inherit; color: inherit; }
 }
 .splash.error { color: var(--danger); }
 
+/* ------------------------------------------------------ mise à jour */
+
+.banner {
+  position: absolute;
+  z-index: 38;
+  top: calc(var(--safe-t) + var(--gap) + var(--tap) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--gap));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 6px 6px 14px;
+  font-weight: 600;
+  border-color: var(--accent);
+}
+.banner .btn { height: 40px; }
+.has-banner .toast { top: calc(var(--safe-t) + var(--gap) + var(--tap) + 72px); }
+
 /* ------------------------------------------------------------- menu */
 
 .menu {
