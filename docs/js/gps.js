@@ -57,6 +57,12 @@ export class GpsTracker {
   }
 
   start() {
+    // en HTTP (ex. http://192.168.x.x sur le Wi-Fi), Safari refuse la localisation sans rien demander :
+    // le dire, plutôt que d'envoyer l'utilisateur chercher dans des réglages qui n'y sont pour rien
+    if (!window.isSecureContext) {
+      this.emit('error', { code: 0, message: 'la localisation exige une connexion HTTPS. Ouvrez l\'app depuis son adresse https://' });
+      return false;
+    }
     if (!navigator.geolocation) {
       this.emit('error', { code: 0, message: 'géolocalisation non disponible sur cet appareil' });
       return false;
@@ -224,10 +230,11 @@ export class GpsController {
     this.lastError = { code: e.code, message: e.message, at: Date.now() };
     if (e.code === 1) {
       this.setMode('off');
-      this.ui.toast('Localisation refusée : autorisez-la dans Réglages › Confidentialité › Service de localisation.', { ms: 7000 });
+      this.ui.toast('Localisation refusée. iPhone : Réglages › Confidentialité et sécurité › Service de localisation › '
+        + 'Sites web Safari › « Lorsque l\'app est active », Position exacte activée.', { ms: 10000 });
     } else if (e.code === 0) {
       this.setMode('off');
-      this.ui.toast(`GPS : ${e.message}`, { ms: 5000 });
+      this.ui.toast(`GPS : ${e.message}`, { ms: 8000 });
     } else if (e.code === 2) {
       this.refresh('Position indisponible');
     } else {

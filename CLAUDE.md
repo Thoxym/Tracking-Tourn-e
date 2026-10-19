@@ -18,7 +18,7 @@ L'utilisateur est ingénieur réseau et sécurité, à l'aise techniquement. Int
 3. **Ne pas créer le dépôt GitHub ni pousser** sans accord explicite de l'utilisateur.
 4. **Ne jamais committer** de progression, d'export JSON, de trace GPS ni de note sur les habitants.
 5. Pas de framework, pas de bundler, **aucune dépendance JS à l'exécution**, aucun script tiers ni inline.
-6. Après toute modification de JS/CSS/HTML : `python pipeline/build.py --stamp` (sinon l'iPhone garde l'ancienne version, §7.5).
+6. Après toute modification de JS/CSS/HTML : `python pipeline/build.py --stamp` (sinon l'iPhone garde l'ancienne version, §7.5). Les tests le vérifient (`build.py --check`).
 7. **Tenir à jour les cases du plan (§2)** au fil du travail, et le journal des décisions (§14).
 
 ---
@@ -29,7 +29,7 @@ L'utilisateur est ingénieur réseau et sécurité, à l'aise techniquement. Int
 |---|---|
 | Python 3.12 (`python` ou `python3`) | shapely 2.2, pyproj 3.8, scipy 1.18, numpy, pandas, Pillow installés (`--user`) |
 | Node 22 / npm 11 | `@playwright/test` 1.64 (devDependency) ; navigateurs WebKit et Chromium installés |
-| git 2.46 | dépôt local initialisé (branche `main`, aucun commit, aucun remote) ; `core.autocrlf=true` sur ce poste, neutralisé par `.gitattributes` (`eol=lf`) |
+| git 2.46 | branche `main`, remote `origin` (GitHub, privé) ; `core.autocrlf=true` sur ce poste, neutralisé par `.gitattributes` (`eol=lf`) |
 | `gh` (GitHub CLI) | **absent** : créer le dépôt via l'interface web, ou installer `gh` (avec accord) |
 | zcat / awk / grep | uniquement dans Git Bash → le pipeline n'en dépend pas (lecture gzip en Python) |
 
@@ -40,18 +40,19 @@ npm install                                         # devDependencies : @playwri
 npx playwright install webkit chromium
 python pipeline/build.py                            # régénère docs/data/ + stamp
 python pipeline/build.py --stamp                    # recalcule seulement VERSION/PRECACHE de sw.js
+python pipeline/build.py --check                    # vérifie que le stamp est à jour, sans rien écrire
 python pipeline/build.py --preview                  # + work/preview.png pour contrôle visuel
 python pipeline/build.py --force-extract            # relit les sources malgré le cache de work/
 python pipeline/icons.py                            # regénère les icônes (build ne crée que les manquantes)
 python -m http.server -d docs 8000                  # puis http://localhost:8000
-npx playwright test                                 # tests (le serveur est lancé par la config)
+npx playwright test                                 # tests (serveur lancé par la config sur le port 8100, §11)
 ```
 
 ---
 
 ## 2. Plan d'action v0.1 (à cocher au fil de l'eau)
 
-**État : phases 0 à 8 terminées le 19/10/2026. Commits locaux `2acdf2b` (phases 0-4), `abc2685` (5), `9b03e31` (6), `27a38a9` (7), aucun remote ; phase 8 pas encore commitée. Prochaine étape : phase 9.**
+**État : phases 0 à 9 terminées le 19/10/2026. Commits locaux `2acdf2b` (phases 0-4), `abc2685` (5), `9b03e31` (6), `27a38a9` (7), `50a06ba` (8) ; remote `origin` = github.com/Thoxym/Tracking-Tourn-e (privé, créé et poussé jusqu'à `50a06ba` par l'utilisateur, Pages inactif) ; phase 9 et audit de sécurité pas encore commités. Prochaine étape : phase 10 (déploiement, uniquement avec accord explicite).**
 
 ### Phase 0 — Initialisation ✅
 - [x] `git init` (local uniquement, branche `main`).
@@ -130,10 +131,11 @@ npx playwright test                                 # tests (le serveur est lanc
 - [x] Bandeau « Nouvelle version disponible — Recharger » → `SKIP_WAITING` → rechargement sur `controllerchange` (seulement si l'utilisateur l'a demandé) ; `reg.update()` au retour au premier plan (≥ 30 min d'écart).
 - **Fin de phase** : ✔ 14 contrôles en Chromium et WebKit (profil iPhone) : précache complet, page contrôlée dès la première visite sans rechargement ni bandeau, **rechargement hors ligne OK** (avec `?debug=1` aussi), pointage hors ligne conservé, mise à jour simulée sur un second serveur (bandeau, pas de rechargement imposé, « Recharger », nouveau cache, ancien supprimé, cache d'un autre site conservé). Chromium : aucune erreur d'installabilité ni de manifest.
 
-### Phase 9 — Tests Playwright (`tests/`, `playwright.config.js`)
-- [ ] Projets WebKit (profil iPhone) et Chromium ; `webServer` = `python -m http.server -d docs 8000`.
-- [ ] Les 6 cas de §11.
-- **Fin de phase** : `npx playwright test` vert.
+### Phase 9 — Tests Playwright (`tests/`, `playwright.config.js`) ✅
+- [x] Projets WebKit (profil iPhone) et Chromium. `webServer` = `tests/serve.py` sur 127.0.0.1:8100 plutôt que `http.server` : sa file d'attente de 5 connexions déborde en parallèle (§10).
+- [x] Les 6 cas de §11, plus les vérifications des phases 2 à 8 (gestes, GPS, Wake Lock, import piégé, debug, mise à jour du SW).
+- [x] `build.py --check` : échoue si `docs/` a changé sans stamp ; appelé par les tests.
+- **Fin de phase** : ✔ `npx playwright test` vert. 25 tests × 2 navigateurs (un seul passage pour le stamp) : 49 réussis, 1 ignoré, 48 s. Stable sur 3 répétitions ; sabotages volontaires détectés.
 
 ### Phase 10 — Déploiement (uniquement avec accord explicite)
 - [ ] Création du dépôt **public** (interface web GitHub ou `gh`), push de `main`.
@@ -244,7 +246,8 @@ neyron-tournees/
 │   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, version.json (ne pas lire)
-└── tests/                # Playwright
+└── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne),
+                          #   helpers.js (outils communs), serve.py (serveur statique des tests)
 ```
 
 ---
@@ -303,7 +306,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   const PRECACHE = ['./', './index.html', './css/app.css', './js/main.js', …, './data/plan.json'];
   // @build:end
   ```
-  Sans ce stamp, un changement de code ne modifie pas `sw.js` : le navigateur ne voit pas de mise à jour et l'iPhone garde l'ancienne app.
+  Sans ce stamp, un changement de code ne modifie pas `sw.js` : le navigateur ne voit pas de mise à jour et l'iPhone garde l'ancienne app. `--check` refait le calcul sans rien écrire et échoue si `sw.js` ou `version.json` est périmé (appelé par les tests Playwright).
 - `version.json` : `{ "app": "…", "data": "…", "builtAt": "…" }` ; `builtAt` n'est mis à jour que si une version change (pas de diff git inutile).
 
 ### 7.6 Schéma des données (`docs/data/`)
@@ -390,6 +393,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - Mode **suivre** : recentrer à chaque position ; désactivé dès que l'utilisateur déplace la carte à la main.
 - **Encart des plus proches** : 3 adresses non faites les plus proches (force brute, 229 points), distance + bouton « Fait ».
 - `visibilitychange` (retour au premier plan) : relancer `watchPosition` si aucune position depuis plus de 10 s.
+- Hors contexte sécurisé (HTTP), le GPS n'est pas lancé et un toast l'explique ; un refus (code 1) donne le chemin des réglages iOS (« Sites web Safari »).
 - Le GPS ne marche **pas** en arrière-plan sur iOS : l'interface le rappelle, avec le conseil de garder l'écran allumé.
 - **Bouton localiser** (en haut de la colonne de droite), trois états : `off` → tap → `on` (GPS lancé, centrage sur le premier point, zoom porté à 2,2 px/m au moins) → tap → `follow` (recentrage à chaque position, bouton enfoncé) → tap → `off` (GPS arrêté, point et encart masqués). Un glisser de la carte (`userpan`) repasse de `follow` à `on` ; un pincement (`userzoom`) ne coupe pas le suivi. Pas de recentrage pendant un geste.
 - **Encart** (en bas à gauche, à côté des contrôles) : ligne d'état (précision / recherche du signal / position ancienne / hors du plan) puis 3 lignes « adresse · distance · Fait ». Il ignore les rues masquées et garde les « à repasser » (badge). Il est masqué pendant que le panneau d'adresse est ouvert. Sa hauteur entre dans la marge basse de la carte (centrages) et décale la barre d'échelle (`--nearby-h`).
@@ -411,6 +415,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - Suppression des anciens caches `neyron-tournees-*` à l'activation (ne pas toucher aux caches d'autres sites de l'origine).
 - Mise à jour : nouvelle version détectée → bandeau « Nouvelle version disponible — Recharger » → `postMessage({type: 'SKIP_WAITING'})` → rechargement sur `controllerchange`.
 - Enregistrement : `navigator.serviceWorker.register('./sw.js', {scope: './'})`, dans `pwa.js`, appelé au chargement du module principal (avant le plan).
+- Sans « Recharger », le worker en attente s'active de lui-même au prochain lancement à froid (toutes les fenêtres de l'app fermées) : le bandeau est un confort, pas un contrôle de sécurité (§9).
 - `clients.claim()` à l'activation : dès la première visite, la page est contrôlée et l'app fonctionne hors ligne sans rechargement. La prise de contrôle de la première installation ne recharge pas la page (rechargement seulement après « Recharger »).
 - **Détection d'une mise à jour** : un worker en attente (`reg.waiting`) alors que la page était **déjà contrôlée par une version précédente** (au chargement, ou depuis la fin de la première installation). Ne pas se fier à `navigator.serviceWorker.controller` seul (piège WebKit, §10).
 - Navigations (dont `?debug=1`) → `./index.html` du cache ; autres requêtes → cache avec `ignoreSearch`, réseau seulement hors précache. Requêtes d'une autre origine ou hors du scope : non interceptées.
@@ -438,12 +443,36 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 ### Conséquences de l'hébergement
 - **Dépôt public** (Pages gratuit) : acceptable, données ouvertes (BAN, cadastre Etalab). Ne jamais committer progression, export, trace GPS, notes.
 - **Sous-chemin** `https://<user>.github.io/<repo>/` : URL relatives partout ; manifest `start_url: "./"`, `scope: "./"` ; aucun chemin commençant par `/`.
-- **Origine partagée** `<user>.github.io` : préfixer IndexedDB (`neyron-tournees`) et caches (`neyron-tournees-<version>`) ; pas de clés `localStorage` génériques. Un domaine personnalisé isolerait l'origine (plus tard) ; changer d'origine = stockage vide, d'où l'export/import.
+- **Origine partagée** `<user>.github.io` : préfixer IndexedDB (`neyron-tournees`) et caches (`neyron-tournees-<version>`) ; pas de clés `localStorage` génériques. Changer d'origine = stockage vide, d'où l'export/import.
 - **Sécurité** : le SW se met à jour dès que le téléphone joint le site ; l'intégrité repose sur le compte GitHub (MFA + clé matérielle : affaire de l'utilisateur). Côté code :
   - aucun script tiers à l'exécution, tout est servi depuis le dépôt ;
-  - CSP en meta (Pages ne permet pas d'en-têtes) :
-    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self'; connect-src 'self'` ;
-  - aucun script inline ; `<meta name="referrer" content="no-referrer">`.
+  - CSP en meta (Pages ne permet pas d'en-têtes ; ni `frame-ancestors` ni `Permissions-Policy` possibles), **sans `'unsafe-inline'`** (styles posés uniquement par le CSSOM, autorisé) :
+    `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; worker-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'` ;
+  - aucun script inline, aucun `innerHTML` (tout affichage par `textContent`) ; `<meta name="referrer" content="no-referrer">`.
+
+### Audit de sécurité (19/10/2026)
+- **Aucune donnée GPS ne quitte l'appareil.**
+  - La position est calculée par l'iPhone, convertie et affichée localement.
+  - Seuls trois flux sortent : le chargement des fichiers statiques (identiques pour tous), la vérification de mise à jour de `sw.js`, et l'export, partagé à la main par la feuille de partage.
+  - Les positions ne sont jamais stockées : mémoire seule, effacées à l'arrêt du GPS.
+  - Le diagnostic copié du panneau debug **masque** lat/lon, x/y et le centre de la carte (le panneau, lui, les affiche sur l'appareil).
+- **Donnée indirecte** : le journal (IndexedDB, exports) horodate chaque adresse pointée. C'est un historique partiel des déplacements : traiter les exports comme sensibles.
+- **MITM** : rien à intercepter, puisqu'aucune position ne transite.
+  - Pour injecter du code, il faudrait casser TLS : HTTPS imposé sur github.io (http → 301), HSTS 1 an (`max-age=31556952`), mais **github.io n'est pas préchargé HSTS** (vérifié sur hstspreload.org).
+  - Risque résiduel : première visite en `http://` sur un réseau hostile. Toujours ouvrir l'URL `https://` ; une fois l'app installée, son code est servi par le SW.
+  - Un iPhone avec un certificat racine ajouté (profil MDM, proxy d'entreprise) permettrait l'interception.
+- **Compromission du compte ou du dépôt GitHub** : c'est le vrai point d'entrée.
+  - Un push malveillant atteint le téléphone : le bandeau « Recharger » n'est **pas** une barrière, car le worker en attente s'active seul au prochain lancement à froid.
+  - Du code malveillant pourrait alors lire le GPS en direct et l'exfiltrer (il réécrirait la CSP). Aucune parade côté app (limite des web apps).
+  - Parades côté compte : clé de sécurité ou passkey, pas de SMS, jetons à durée limitée, ruleset sur `main` (pas de force-push), aucun workflow tiers.
+- **Co-hébergement sur `thoxym.github.io`** : le compte a déjà deux sites Pages (`programme-3ans`, `programme2026-st-leger`) sur **la même origine**.
+  - Une faille ou un script tiers ajouté à l'un d'eux (aujourd'hui : polices Google en CSS et images externes, pas de script tiers ni de construction risquée) aurait accès à l'IndexedDB et aux caches de l'app.
+  - Il pourrait **empoisonner le cache** du SW : injection persistante, donc exfiltration GPS.
+  - Il hériterait aussi de l'**autorisation de localisation** accordée à l'origine.
+  - Parade : une origine dédiée (organisation GitHub gratuite → `<org>.github.io`, ou domaine personnalisé). **À décider avant le premier déploiement** (changer d'origine plus tard = stockage vide).
+- **Dépôt public** : les commits portent le nom complet et l'e-mail de l'utilisateur. Passer à l'e-mail `noreply` de GitHub et réécrire l'auteur des commits (dépôt encore privé, réécriture sans conséquence) avant de le rendre public.
+- **Cadrage (clickjacking)** : impossible à interdire par en-tête sur Pages. Impact faible : un site tiers qui encadre l'app ne peut rien lire (origine différente), au pire provoquer des taps.
+- **Chaîne d'approvisionnement** : rien de tiers à l'exécution. Playwright et les libs Python ne tournent que sur le PC. Des données sources piégées ne peuvent pas injecter de script (`textContent`, `setAttribute('d')`). L'import piégé est testé.
 
 ---
 
@@ -453,6 +482,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **`hidden` et `all: unset`** : `all: unset` sur les boutons annule `hidden`. Ajouter `[hidden]{display:none!important}`.
 - **Couleurs** sur 6 chiffres (`#888` mal interprété a déjà donné du bleu marine avec reportlab).
 - **Pas de serveur LAN** : le SW ne doit jamais attendre le réseau pour servir l'app.
+- **iPhone sur `http://<IP du PC>:8000`** : ce n'est pas un contexte sécurisé. Safari y **refuse la localisation sans rien demander** (erreur « refusée », quels que soient les réglages), et il n'y a ni service worker ni Wake Lock. Seule l'interface se teste ainsi ; le GPS exige HTTPS (GitHub Pages). L'app l'annonce désormais (`isSecureContext`) et le panneau debug affiche « contexte sécurisé ».
 - **Chemins** absolus (`/js/…`) cassés sous `/<repo>/`.
 - **Oubli du stamp** : modifier du JS/CSS sans `build.py --stamp` → pas de mise à jour du SW sur l'iPhone.
 - **Windows** : pas de `zcat` hors Git Bash (le pipeline lit le gzip en Python) ; toujours ouvrir les fichiers en `encoding='utf-8'` (noms de voies accentués, apostrophe typographique dans `cage d’escalier`) ; écrire les JSON avec `ensure_ascii=False` et des fins de ligne `\n`.
@@ -464,6 +494,9 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **Playwright + WebKit : `boundingBox()` des `<text>` SVG est faux** (coordonnées aberrantes, ex. x = −1345). Pour taper un numéro dans un test, calculer la position avec `neyronApp.map.toScreen(a.x, a.y)` et taper `#map` à cette position. Sous le zoom `K_NUMBERS`, les numéros sont masqués : zoomer d'abord.
 - **WebKit et première installation du service worker** : la page est rattachée au nouveau worker (`clients.claim`) **avant** que celui-ci signale `installed`, alors qu'il est encore `waiting`. Un test « `reg.waiting && controller` » affiche donc un faux bandeau « Nouvelle version » à la première visite. Critère retenu : page déjà contrôlée par une version précédente (§8.5).
 - **Playwright + Chromium, géolocalisation simulée** : `setGeolocation` avec les mêmes coordonnées et une autre précision ne déclenche pas de nouvelle position ; décaler légèrement la position dans les tests.
+- **`python -m http.server` et tests en parallèle** : sa file d'attente de 5 connexions déborde quand plusieurs navigateurs précachent l'app en même temps. Sous Windows, cela donne des connexions refusées et une app qui ne démarre pas (timeouts aléatoires). Les tests utilisent donc `tests/serve.py` (file de 256).
+- **Chromium hors ligne et cache HTTP** : avec `setOffline(true)`, Chromium peut encore servir un fichier depuis son cache HTTP. Un fichier absent du précache passe alors inaperçu (l'iPhone, lui, ne garantit pas ce cache). Le test hors ligne vérifie donc que chaque ressource chargée est dans le cache du SW.
+- **Animations dans les tests** : mesurer un zoom après un délai fixe est instable sous WebKit chargé. Attendre la fin de l'animation (`map._anim` nul, `k` modifié).
 - **Safari et pincement de page** : iOS ignore `user-scalable=no` ; les `gesturestart/change` sont bloqués au niveau du document, et sur macOS le pincement trackpad (événements `gesture*` sans pointeur actif) zoome la carte.
 - **v0.2 (PDF reportlab)** : le mode de rendu du texte (`Tr`) persiste → entourer les halos de `saveState()` / `restoreState()` ; exposants et indices Unicode non rendus.
 
@@ -472,16 +505,32 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 ## 11. Tests
 
 - **Bureau** : `python -m http.server -d docs 8000`, http://localhost:8000 (contexte sécurisé : géolocalisation et SW fonctionnent).
-- **Playwright** : projets WebKit (profil iPhone) et Chromium ; géolocalisation simulée (`context.setGeolocation`, `permissions: ['geolocation']`). Cas :
-  1. chargement du plan (229 numéros pointables, contexte en gris) ;
-  2. tap sur un numéro, Fait : l'état persiste après rechargement ;
-  3. « Toute la rue faite », puis Annuler : états précédents restaurés (y compris « à repasser ») ;
-  4. position simulée sur la Rue de la Gare : l'encart propose les bons numéros ;
-  5. export puis import : état identique ;
-  6. hors ligne (`context.setOffline(true)`) après une première visite : l'app se charge.
+- **Playwright** : `npx playwright test` (ou `npm test`), ~50 s, 8 workers. Projets `webkit-iphone` (iPhone 13) et `chromium` (bureau 1280 × 800). La config lance **son propre serveur** `tests/serve.py` sur **http://127.0.0.1:8100** (boucle locale, file d'attente de 256 connexions, §10), distinct du serveur de dev (8000). Chaque test part d'un contexte neuf (IndexedDB, caches, SW vides). Rapport : `npx playwright show-report` ; trace conservée en cas d'échec.
+- Les 6 cas de référence, et les fichiers qui les couvrent :
+  1. chargement du plan (229 numéros pointables, contexte en gris) → `plan.spec.js` ;
+  2. tap sur un numéro, Fait : l'état persiste après rechargement → `pointage.spec.js` ;
+  3. « Toute la rue faite », puis Annuler : états précédents restaurés (y compris « à repasser ») → `pointage.spec.js` ;
+  4. position simulée sur la Rue de la Gare : l'encart propose les bons numéros → `gps.spec.js` (attendus recalculés depuis `addresses.json`, indépendamment de l'app) ;
+  5. export puis import : état identique → `sauvegarde.spec.js` (deux contextes = deux appareils) ;
+  6. hors ligne (`context.setOffline(true)`) après une première visite : l'app se charge → `hors-ligne.spec.js`.
+- Couvert en plus (repris des vérifications des phases 2 à 8) :
+  - gestes ;
+  - numéro de contexte non pointable ;
+  - Ctrl+Z ;
+  - suivi GPS, précision, hors du plan, position ancienne, relance, refus ;
+  - Wake Lock simulé (`wakelock.spec.js`) ;
+  - feuille de partage ;
+  - **import piégé** ;
+  - panneau debug (`debug.spec.js`) ;
+  - **tout fichier chargé hors ligne est dans le précache** ;
+  - mise à jour par le bandeau, sur une copie du site servie sur un port libre ;
+  - **stamp à jour** (`build.py --check`, Chromium seulement).
+- Outils communs dans `tests/helpers.js` : `openApp`, `tapAddress` (position écran calculée par la carte, §10), identifiants BAN et positions GPS de référence, `trackErrors` (toute erreur JS ou `console.error` fait échouer le test).
+- Vérifié le 19/10/2026 :
+  - `--repeat-each=3` : 144/144, aucun test instable ;
+  - des sabotages volontaires sont détectés : encart limité à 2 adresses, module retiré du précache.
 - **Pipeline** : les assertions de comptage et de résidu font office de tests.
 - **iPhone** : uniquement via l'URL GitHub Pages, après un push. Debug : `?debug=1` dans Safari ; **dans l'app installée, 5 taps rapides sur la ligne de version du menu ⋮** (son stockage est séparé de Safari et elle ne reçoit pas de paramètre d'URL). Réduire le panneau pour dégager la carte avant un appui long.
-- Les scripts de vérification de chaque phase (Playwright) ont tourné dans le dossier de travail de Claude ; la phase 9 les reprend comme vrais tests dans `tests/`.
 
 ---
 
@@ -534,3 +583,16 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **19/10/2026** — Commit `abc2685` (phase 5). Phase 6 : menu « ⋮ » qui regroupe Exporter / Importer / Thème (le bouton thème quitte la barre pour libérer de la place sur iPhone) ; import validé strictement et confirmé avant fusion.
 - **19/10/2026** — Commit `9b03e31` (phase 6). Phase 7 : debug activable dans l'app installée par 5 taps sur la version (pas de paramètre d'URL possible) ; journal d'erreurs JS toujours collecté ; position simulée qui coupe le vrai GPS ; panneau limité à 38 % de la hauteur sur téléphone.
 - **19/10/2026** — Commit `27a38a9` (phase 7). Phase 8 : `clients.claim()` pour être hors ligne dès la première visite ; mise à jour jamais imposée (bandeau) ; vérification de mise à jour au retour au premier plan (app installée rarement rechargée) ; critère de mise à jour robuste au comportement de WebKit.
+- **19/10/2026** — Commit `50a06ba` (phase 8). Phase 9 :
+  - serveur de test dédié (`tests/serve.py`, 127.0.0.1:8100, file d'attente longue) au lieu de `http.server`, qui refusait des connexions en parallèle ;
+  - tests de toutes les phases, et pas seulement des 6 cas ;
+  - attendus GPS recalculés depuis les données ;
+  - précache vérifié ressource par ressource ;
+  - `build.py --check` dans les tests contre l'oubli du stamp.
+- **19/10/2026** — Audit de sécurité (§9) :
+  - CSP durcie (sans `'unsafe-inline'`, plus `object-src`, `base-uri` et `form-action` à `'none'`) ;
+  - position masquée dans le diagnostic copié ;
+  - message explicite en HTTP (`isSecureContext`) : l'iPhone testait sur `http://192.168.1.x:8000`, d'où « localisation refusée » ;
+  - message de refus GPS avec le chemin iOS.
+
+  Le dépôt `github.com/Thoxym/Tracking-Tourn-e` (privé, Pages inactif) a été créé et poussé par l'utilisateur. **Décisions en attente** : origine dédiée ou `thoxym.github.io` partagé avec deux autres sites ; e-mail `noreply` et réécriture des auteurs avant passage en public.

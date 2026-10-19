@@ -6,6 +6,7 @@
   "scripts": {
     "build": "python pipeline/build.py",
     "stamp": "python pipeline/build.py --stamp",
+    "check": "python pipeline/build.py --check",
     "serve": "python -m http.server -d docs 8000",
     "test": "playwright test"
   },

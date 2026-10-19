@@ -268,9 +268,10 @@ NOT_HASHED = {"data/version.json", ".nojekyll"}
 NOT_PRECACHED = {"sw.js", ".nojekyll"}
 
 
-def stamp():
+def stamp(check=False):
     """Version de l'app = hash de docs/ (hors bloc généré de sw.js et version.json).
-    Réécrit version.json et le bloc VERSION / PRECACHE de sw.js."""
+    Réécrit version.json et le bloc VERSION / PRECACHE de sw.js. Avec check=True, n'écrit rien
+    et échoue si l'un des deux est périmé (docs/ modifié sans relancer le stamp)."""
     docs = config.DOCS_DIR
     files = sorted((p for p in docs.rglob("*") if p.is_file()), key=lambda p: p.relative_to(docs).as_posix())
     h = hashlib.sha256()
@@ -292,15 +293,20 @@ def stamp():
     data_version = json.loads(addresses.read_text("utf-8"))["version"] if addresses.exists() else None
     vpath = config.DATA_DIR / "version.json"
     old = json.loads(vpath.read_text("utf-8")) if vpath.exists() else {}
+    stale = []
     if old.get("app") != app or old.get("data") != data_version or "builtAt" not in old:
-        built = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
-        _write(vpath, _j({"app": app, "data": data_version, "builtAt": built}) + "\n")
+        stale.append("data/version.json")
+        if not check:
+            built = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
+            _write(vpath, _j({"app": app, "data": data_version, "builtAt": built}) + "\n")
         if "data/version.json" not in rels:
             rels.append("data/version.json")
     precache = ["./"] + ["./" + r for r in sorted(rels) if r not in NOT_PRECACHED]
 
     sw = docs / "sw.js"
     if not sw.exists() or not BUILD_BLOCK.search(sw.read_text("utf-8")):
+        if check:
+            raise BuildError("docs/sw.js absent ou sans marqueurs @build")
         log(f"Stamp : app {app} (docs/sw.js absent ou sans marqueurs @build : bloc non écrit)")
         return app
     block = ("// @build:start (généré par pipeline/build.py --stamp, ne pas éditer)\n"
@@ -310,7 +316,14 @@ def stamp():
     src = sw.read_text("utf-8")
     new = BUILD_BLOCK.sub(lambda _: block, src, count=1)
     if new != src:
-        _write(sw, new)
+        stale.append("sw.js")
+        if not check:
+            _write(sw, new)
+    if check:
+        if stale:
+            raise BuildError(f"stamp périmé ({', '.join(stale)}) : lancer python pipeline/build.py --stamp")
+        log(f"Stamp à jour : app {app}, {len(precache)} fichiers en précache")
+        return app
     log(f"Stamp : app {app}, {len(precache)} fichiers en précache")
     return app
 
@@ -323,10 +336,14 @@ def main(argv=None):
         s.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description="Pipeline des données de la PWA Tournées de Neyron")
     ap.add_argument("--stamp", action="store_true", help="recalcule seulement la version et le précache")
+    ap.add_argument("--check", action="store_true", help="vérifie que le stamp est à jour, sans rien écrire")
     ap.add_argument("--force-extract", action="store_true", help="ignore le cache d'extraction de work/")
     ap.add_argument("--preview", action="store_true", help="écrit work/preview.png")
     args = ap.parse_args(argv)
     try:
+        if args.check:
+            stamp(check=True)
+            return 0
         if not args.stamp:
             build_data(force_extract=args.force_extract, preview=args.preview)
             import icons

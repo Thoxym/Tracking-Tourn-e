@@ -150,18 +150,23 @@ export class DebugPanel {
     this.render();
   }
 
-  sections() {
+  // forCopy : le diagnostic copié peut être collé n'importe où (message, ticket) : la position n'y figure pas
+  sections(forCopy = false) {
     const { map, store, gps, wake, versions } = this.app;
     const a = this.async;
     const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
     const t = gps.tracker;
     const pos = t.last;
+    const where = (v) => (forCopy ? 'masqué dans la copie' : v);
     const gpsLines = [
       ['mode', `${gps.mode}${t.watching ? ' (watchPosition actif)' : ''}`],
       ['position', !pos ? 'aucune' : `${pos.source}, ± ${Math.round(pos.acc)} m, qualité ${t.quality()}, âge ${Math.round(t.age())} s`],
     ];
-    if (pos && pos.lat !== undefined) gpsLines.push(['lat / lon', `${pos.lat.toFixed(6)} / ${pos.lon.toFixed(6)}`]);
-    if (pos) gpsLines.push(['plan x / y', `${pos.x.toFixed(1)} / ${pos.y.toFixed(1)} m${pos.out ? ` (hors du plan : ${Math.round(pos.out)} m)` : ''}`]);
+    if (pos && pos.lat !== undefined) gpsLines.push(['lat / lon', where(`${pos.lat.toFixed(6)} / ${pos.lon.toFixed(6)}`)]);
+    if (pos) {
+      const out = pos.out ? ` (hors du plan : ${Math.round(pos.out)} m)` : '';
+      gpsLines.push(['plan x / y', where(`${pos.x.toFixed(1)} / ${pos.y.toFixed(1)} m${out}`)]);
+    }
     gpsLines.push(['relances', String(t.restarts)]);
     if (gps.lastError) gpsLines.push(['dernière erreur', `code ${gps.lastError.code} ${gps.lastError.message} (${fmtTime(gps.lastError.at)})`]);
     return [
@@ -170,6 +175,7 @@ export class DebugPanel {
         ['version données', versions.data || '?'],
         ['build', versions.builtAt || '?'],
         ['affichage', standalone ? 'app installée (standalone)' : 'navigateur'],
+        ['contexte sécurisé', window.isSecureContext ? 'oui' : 'NON (HTTP) : GPS, service worker et écran allumé indisponibles'],
         ['écran', `${innerWidth} × ${innerHeight} px, DPR ${devicePixelRatio}`],
         ['réseau', navigator.onLine ? 'en ligne' : 'hors ligne'],
       ]],
@@ -193,15 +199,15 @@ export class DebugPanel {
       ]],
       ['Carte', [
         ['zoom', `${map.k.toFixed(2)} px/m`],
-        ['centre', `${map.cx.toFixed(0)} / ${map.cy.toFixed(0)} m`],
+        ['centre', where(`${map.cx.toFixed(0)} / ${map.cy.toFixed(0)} m`)],  // suit la position en mode suivre
       ]],
       ['Erreurs JS', errors.length ? errors.map((e, i) => [String(i + 1), e]) : [['', 'aucune']]],
     ];
   }
 
-  text() {
+  text(forCopy = false) {
     const out = ['Tournées de Neyron — diagnostic', `${new Date().toISOString()} · ${navigator.userAgent}`];
-    for (const [title, lines] of this.sections()) {
+    for (const [title, lines] of this.sections(forCopy)) {
       out.push('', `[${title}]`);
       for (const [k, v] of lines) out.push(k ? `${k} : ${v}` : v);
     }
@@ -214,7 +220,7 @@ export class DebugPanel {
   }
 
   async copy() {
-    const text = this.text();
+    const text = this.text(true);
     try {
       await navigator.clipboard.writeText(text);
       this.app.ui.toast('Diagnostic copié');
