@@ -1,6 +1,7 @@
 // Démarrage : chargement des données, stockage de la progression, plan, interface.
 
 import { GpsController } from './gps.js';
+import { BackupController } from './io.js';
 import { MapView } from './map.js';
 import { Store } from './store.js';
 import { UI } from './ui.js';
@@ -23,8 +24,14 @@ async function start() {
     ui.onSheet(() => gps.refresh());
     const wake = new WakeLockController({ ui });
     gps.wake = wake;
-    window.neyronApp = { map, ui, data, store, gps, wake };  // accès pour le panneau debug et les tests
+    const backup = new BackupController({ ui, store, map });
+    const versions = { app: null, data: data.version };
+    window.neyronApp = { map, ui, data, store, gps, wake, backup, versions };  // accès pour le panneau debug et les tests
     splash.hidden = true;
+    ui.setVersions(versions);
+    loadJSON('./data/version.json')
+      .then((v) => { versions.app = v.app; ui.setVersions(versions); })
+      .catch(() => {});
     if (store.error) ui.toast(`Stockage indisponible (${store.error.message}) : la progression ne sera pas conservée`, { ms: 8000 });
     store.requestPersist();
   } catch (err) {

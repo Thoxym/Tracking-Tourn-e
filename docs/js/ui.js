@@ -149,9 +149,7 @@ export class UI {
     for (const m of document.querySelectorAll('meta[name="theme-color"]')) {
       m.content = pref === 'auto' ? m.dataset.default : bg;
     }
-    const btn = $('btn-theme');
-    btn.setAttribute('aria-label', `Thème : ${THEME_LABELS[pref]}`);
-    btn.title = `Thème : ${THEME_LABELS[pref]}`;
+    $('theme-label').textContent = THEME_LABELS[pref];
   }
 
   cycleTheme() {
@@ -218,6 +216,15 @@ export class UI {
     });
   }
 
+  setMenuOpen(open) {
+    $('menu').hidden = !open;
+    $('btn-menu').setAttribute('aria-expanded', String(open));
+  }
+
+  setVersions({ app, data }) {
+    $('menu-version').textContent = `Tournées de Neyron v0.1 · app ${app || '?'} · données ${data || '?'}`;
+  }
+
   setLegendOpen(open) {
     $('legend').hidden = !open;
     $('btn-legend').setAttribute('aria-expanded', String(open));
@@ -260,6 +267,14 @@ export class UI {
     $('btn-legend').addEventListener('click', () => this.setLegendOpen($('legend').hidden));
     $('btn-legend-close').addEventListener('click', () => this.setLegendOpen(false));
     $('btn-theme').addEventListener('click', () => this.cycleTheme());
+    $('btn-menu').addEventListener('click', () => this.setMenuOpen($('menu').hidden));
+    $('menu').addEventListener('click', (e) => {
+      if (e.target.closest('.menu-item') && e.target.closest('.menu-item').id !== 'btn-theme') this.setMenuOpen(false);
+    });
+    $('import-file').addEventListener('change', () => this.setMenuOpen(false));
+    document.addEventListener('pointerdown', (e) => {
+      if (!$('menu').hidden && !e.target.closest('#menu, #btn-menu')) this.setMenuOpen(false);
+    }, true);
     $('btn-undo').addEventListener('click', () => this.undo());
     $('btn-zoom-in').addEventListener('click', () => this.map.zoomBy(1.6));
     $('btn-zoom-out').addEventListener('click', () => this.map.zoomBy(1 / 1.6));
@@ -285,7 +300,8 @@ export class UI {
         return;
       }
       if (e.key !== 'Escape' || $('confirm').open) return;
-      if (!$('sheet').hidden) this.closeSheet();
+      if (!$('menu').hidden) this.setMenuOpen(false);
+      else if (!$('sheet').hidden) this.closeSheet();
       else if (!$('legend').hidden && !desktop.matches) this.setLegendOpen(false);
       else if (this.map.selectedStreet != null) this.selectStreet(null);
     });

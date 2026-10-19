@@ -551,6 +551,48 @@ button { font: inherit; color: inherit; }
 }
 .splash.error { color: var(--danger); }
 
+/* ------------------------------------------------------------- menu */
+
+.menu {
+  position: absolute;
+  z-index: 35;
+  top: calc(var(--safe-t) + var(--gap) + var(--tap) + 8px);
+  right: calc(var(--safe-r) + var(--gap));
+  min-width: 260px;
+  max-width: calc(100vw - 2 * var(--gap));
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+.menu-item {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 12px;
+  border-radius: 10px;
+  text-align: left;
+  font-weight: 550;
+  cursor: pointer;
+}
+.menu-item:active, .menu-item:focus-visible { background: var(--surface-2); outline: none; }
+.menu-item .ico { color: var(--text-2); }
+.menu-foot { margin: 4px 0 0; padding: 8px 12px 4px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-2); }
+
+.vh {  /* masqué visuellement mais activable (le sélecteur de fichiers iOS refuse parfois un input display:none) */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  pointer-events: none;
+}
+
 /* -------------------------------------------------------------- GPS */
 
 .locate .ico-on, .locate .ico-follow { display: none; }

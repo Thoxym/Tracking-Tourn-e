@@ -200,6 +200,60 @@ export class Store {
     return action;
   }
 
+  // ------------------------------------------------------------ export / import
+
+  exportData() {
+    return {
+      app: 'neyron-tournees',
+      schema: 1,
+      exportedAt: new Date().toISOString(),
+      deviceId: this.deviceId,
+      dataVersion: this.meta.dataVersion || null,
+      tours: this.tours,
+      events: this.allEvents,
+    };
+  }
+
+  async markExported() {
+    await this._save({ lastExportAt: Date.now() });
+  }
+
+  // événements absents du journal (clé [dev, seq]) ; ne modifie rien
+  newEvents(events) {
+    const known = new Set(this.allEvents.map((e) => `${e.dev}\u0000${e.seq}`));
+    const out = [];
+    for (const e of events) {
+      const k = `${e.dev}\u0000${e.seq}`;
+      if (!known.has(k)) {
+        known.add(k);
+        out.push(e);
+      }
+    }
+    return out;
+  }
+
+  // fusion d'événements et de tournées déjà validés : ajout seul, dédoublonnage sur [dev, seq]
+  async merge(events, tours = []) {
+    const added = this.newEvents(events);
+    const newTours = tours.filter((t) => !this.tours.some((x) => x.id === t.id));
+    const ownMax = Math.max(0, ...added.filter((e) => e.dev === this.deviceId).map((e) => e.seq));
+    if (this.db && (added.length || newTours.length)) {
+      await transact(this.db, ['events', 'tours', 'meta'], 'readwrite', (tx) => {
+        for (const e of added) tx.objectStore('events').add(e);
+        for (const t of newTours) tx.objectStore('tours').add(t);
+        // sauvegarde de cet appareil réimportée : ne jamais réutiliser un seq déjà pris
+        if (ownMax > this.seq) tx.objectStore('meta').put({ key: 'seq', value: ownMax });
+      });
+    }
+    if (ownMax > this.seq) this.seq = this.meta.seq = ownMax;
+    this.allEvents.push(...added);
+    this.tours.push(...newTours);
+    this._reload();
+    const result = { type: 'import', added: added.length, duplicates: events.length - added.length, tours: newTours.length };
+    this._emit(result);
+    return result;
+  }
+
   // navigator.storage.persist() au premier lancement, persisted() ensuite (affiché par le debug)
   async requestPersist() {
     const s = navigator.storage;

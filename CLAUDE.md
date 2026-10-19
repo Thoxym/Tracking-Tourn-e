@@ -51,7 +51,7 @@ npx playwright test                                 # tests (le serveur est lanc
 
 ## 2. Plan d'action v0.1 (à cocher au fil de l'eau)
 
-**État : phases 0 à 5 terminées le 19/10/2026. Phases 0 à 4 commitées (`2acdf2b`, local, aucun remote) ; phase 5 pas encore commitée. Prochaine étape : phase 6.**
+**État : phases 0 à 6 terminées le 19/10/2026. Commits locaux `2acdf2b` (phases 0-4) et `abc2685` (phase 5), aucun remote ; phase 6 pas encore commitée. Prochaine étape : phase 7.**
 
 ### Phase 0 — Initialisation ✅
 - [x] `git init` (local uniquement, branche `main`).
@@ -110,9 +110,11 @@ npx playwright test                                 # tests (le serveur est lanc
 - [x] Au démarrage du GPS, le toast propose « Garder l'écran allumé » (action du toast généralisée : `toast(msg, {action: {label, run}})`).
 - **Fin de phase** : ✔ 13 contrôles en WebKit iPhone et Chromium avec une API Wake Lock simulée (tap, page masquée puis visible, reprise refusée puis toucher, arrêt, action du toast GPS, refus, API absente).
 
-### Phase 6 — Export / import (`js/io.js`)
-- [ ] Export JSON via `navigator.share({files})` si `canShare`, sinon lien `download` sur blob.
-- [ ] Import `<input type="file" accept=".json,application/json">`, fusion dédoublonnée sur `(dev, seq)`, recalcul de l'état, résumé (« 42 événements ajoutés »).
+### Phase 6 — Export / import (`js/io.js`) ✅
+- [x] Export JSON via `navigator.share({files})` si `canShare`, sinon lien `download` sur blob ; partage annulé signalé (pas de repli).
+- [x] Import `<input type="file" accept=".json,application/json">`, fusion dédoublonnée sur `(dev, seq)`, recalcul de l'état, confirmation préalable, résumé (« 42 événements ajoutés »).
+- [x] Menu « ⋮ » (barre du haut) : Exporter, Importer, Thème (déplacé depuis la barre), versions app / données en pied.
+- **Fin de phase** : ✔ 23 contrôles en WebKit iPhone et Chromium : export (téléchargement, partage simulé, partage annulé), **export puis import sur un autre appareil : état identique**, conservé après rechargement, réimport sans doublon, réimport sur l'appareil d'origine, JSON invalide, fichier étranger, fichier piégé (5 entrées invalides ignorées, champ inconnu retiré, adresse inconnue signalée), refus de la confirmation.
 
 ### Phase 7 — Panneau debug (`js/debug.js`, `?debug=1`)
 - [ ] Précision GPS, âge de la dernière position, état Wake Lock, résultat `storage.persist()`, `storage.estimate()`, mode standalone ou non, état du service worker, version app et données.
@@ -370,6 +372,10 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - `navigator.storage.persist()` au premier lancement ; résultat affiché dans le debug.
 - **Export** : `{app: "neyron-tournees", schema: 1, exportedAt, deviceId, tours, events}`.
 - **Import** : fusion avec dédoublonnage sur `(dev, seq)`, puis recalcul de l'état. Ce format permettra de fusionner plusieurs téléphones.
+- **Export** (`io.js`) : fichier `neyron-tournees-export-AAAAMMJJ-HHMM.json` (motif ignoré par git), avec en plus `dataVersion`. Construit de façon **synchrone** jusqu'à `navigator.share` (la feuille de partage exige un geste récent : pas d'`await` avant). `meta.lastExportAt` est mémorisé (pour le futur rappel de sauvegarde).
+- **Import = donnée non fiable** : `parseBackup()` vérifie `app`, `schema`, puis chaque événement champ par champ (types, `st` ∈ statuts, `seq` entier ≥ 1, longueurs ≤ 64-140 caractères, ≤ 2000 ids, ≤ 200 000 événements, fichier ≤ 20 Mo) ; les entrées invalides sont ignorées et comptées, les **champs inconnus retirés** ; affichage uniquement par `textContent`. Confirmation avant fusion (nombre d'événements, date, appareil source, entrées ignorées, adresses inconnues du plan). Rien n'est jamais supprimé.
+- Les événements importés d'un autre appareil ne sont pas annulables (la pile d'annulation ne contient que les actions de l'appareil). Réimporter une sauvegarde de cet appareil relève `seq` au maximum importé (jamais de clé réutilisée).
+- Le sélecteur de fichiers est ouvert par un `<label for>` (le plus fiable sur iOS) ; l'`input` est masqué visuellement (`.vh`), pas en `display: none`.
 - Une tournée par défaut est créée automatiquement, avec l'id fixe **`default`** (identique sur tous les appareils, pour que la fusion d'exports retombe sur la même tournée) ; « Nouvelle tournée » attend la v0.2.
 - Écritures : une transaction par action (événements + `seq`), requêtes émises sans `await` intermédiaire (certains Safari valident la transaction dès qu'on rend la main) ; `add` et jamais `put` pour les événements. Une action dont rien ne change (déjà dans ce statut) n'écrit rien.
 - API de `Store` : `open(dataVersion)`, `status(id)`, `setStatus(ids, st)`, `undo()`, `canUndo()`, `onChange(fn)`, `requestPersist()`, `allEvents`, `deviceId`, `persistent`, `error`.
@@ -516,3 +522,4 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **19/10/2026** — Phase 4 : bouton GPS unique à trois états (localiser / suivre / arrêter) ; le pincement ne coupe pas le suivi ; encart figé pendant un appui (protection contre un « Fait » sur la mauvaise ligne) ; toasts déplacés en haut.
 - **19/10/2026** — Premier commit `2acdf2b` (phases 0 à 4), à la demande de l'utilisateur ; pas de remote.
 - **19/10/2026** — Phase 5 : écran allumé proposé directement depuis le toast de démarrage du GPS ; reprise du verrou au prochain toucher si iOS la refuse au retour au premier plan.
+- **19/10/2026** — Commit `abc2685` (phase 5). Phase 6 : menu « ⋮ » qui regroupe Exporter / Importer / Thème (le bouton thème quitte la barre pour libérer de la place sur iPhone) ; import validé strictement et confirmé avant fusion.
