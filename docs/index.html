@@ -57,9 +57,9 @@
     </div>
     <input id="import-file" class="vh" type="file" accept=".json,application/json" tabindex="-1" aria-hidden="true">
 
-    <aside id="legend" class="legend panel" hidden aria-label="Rues">
+    <aside id="legend" class="legend panel" hidden aria-label="Rues de la tournée">
       <div class="legend-head">
-        <h2>Rues</h2>
+        <h2>Rues de la tournée</h2>
         <button id="btn-legend-close" class="iconbtn flat" type="button" aria-label="Fermer la légende">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
@@ -120,23 +120,75 @@
     <section id="view-prepare" class="view" hidden aria-label="Préparer la tournée">
       <div class="view-body">
         <div class="view-sec">
-          <h2>Tournée en cours</h2>
-          <p id="prep-summary" class="muted"></p>
+          <h3>Tournées</h3>
+          <ul id="tour-list" class="vlist vlist-top"></ul>
+          <button id="btn-tour-new" class="btn wide" type="button">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nouvelle tournée
+          </button>
+          <details id="tour-archived" class="archived" hidden>
+            <summary>Tournées archivées (<span id="tour-archived-n">0</span>)</summary>
+            <ul id="tour-archived-list" class="vlist"></ul>
+          </details>
         </div>
         <div class="view-sec">
-          <h3>Rues</h3>
+          <h2 id="prep-tour-name"></h2>
+          <p id="prep-summary" class="muted"></p>
+          <div class="btn-row">
+            <button id="btn-tour-select" class="btn primary" type="button">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>Choisir sur la carte
+            </button>
+            <button id="btn-tour-rename" class="btn" type="button">Renommer</button>
+            <button id="btn-tour-archive" class="btn" type="button">Archiver</button>
+          </div>
+        </div>
+        <div class="view-sec">
+          <h3>Rues de la commune</h3>
           <input id="prep-search" class="search" type="search" placeholder="Rechercher une rue" autocomplete="off" enterkeyhint="search" aria-label="Rechercher une rue">
           <ul id="prep-streets" class="vlist"></ul>
           <p id="prep-empty" class="list-empty" hidden>Aucune rue ne correspond.</p>
         </div>
-        <p class="view-note">Bientôt : choisir les rues de la commune, composer et ordonner sa tournée, estimer la charge de travail, vérifier les adresses manquantes.</p>
+        <p class="view-note">Bientôt : ordre des rues, charge de travail, adresses manquantes, import d'un secteur.</p>
       </div>
     </section>
+
+    <div id="select-bar" class="select-bar panel" hidden role="status">
+      <div class="select-text">
+        <strong id="select-count"></strong>
+        <span class="muted">Touchez un numéro pour l'ajouter ou le retirer</span>
+      </div>
+      <button id="btn-select-done" class="btn primary" type="button">Terminer</button>
+    </div>
+
+    <dialog id="street-editor" class="dialog panel">
+      <form method="dialog">
+        <h2 id="se-title"></h2>
+        <p id="se-sub" class="muted"></p>
+        <fieldset class="seg">
+          <legend class="vh">Côté</legend>
+          <label><input type="radio" name="se-side" value="all" checked><span>Tous</span></label>
+          <label><input type="radio" name="se-side" value="pair"><span>Pairs</span></label>
+          <label><input type="radio" name="se-side" value="impair"><span>Impairs</span></label>
+        </fieldset>
+        <div class="range">
+          <label>Du n° <input id="se-from" class="search" type="number" inputmode="numeric" min="0" placeholder="début"></label>
+          <label>au n° <input id="se-to" class="search" type="number" inputmode="numeric" min="0" placeholder="fin"></label>
+        </div>
+        <p id="se-preview" class="se-preview"></p>
+        <div class="dialog-actions">
+          <button id="se-remove" class="btn" type="button">Retirer</button>
+          <button id="se-add" class="btn primary" type="button">Ajouter</button>
+        </div>
+        <div class="dialog-actions">
+          <button id="se-map" class="btn" type="button">Voir sur la carte</button>
+          <button class="btn" type="submit" value="close">Fermer</button>
+        </div>
+      </form>
+    </dialog>
 
     <section id="view-control" class="view" hidden aria-label="Contrôler la tournée">
       <div class="view-body">
         <div class="view-sec">
-          <h2>Bilan de la tournée</h2>
+          <h2 id="ctl-title">Bilan de la tournée</h2>
           <div class="stats">
             <div class="stat stat-done"><span id="ctl-done" class="stat-n">0</span><span class="stat-l">faites</span></div>
             <div class="stat"><span id="ctl-todo" class="stat-n">0</span><span class="stat-l">restantes</span></div>
@@ -148,6 +200,7 @@
         <div class="view-sec">
           <h3>Par rue</h3>
           <ul id="ctl-streets" class="vlist"></ul>
+          <p id="ctl-empty" class="list-empty" hidden>Tournée vide : composez-la dans l'onglet Préparer.</p>
         </div>
         <button id="ctl-export" class="btn primary wide" type="button">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Exporter la progression
@@ -187,6 +240,17 @@
         <div class="dialog-actions">
           <button class="btn" type="submit" value="cancel">Non</button>
           <button id="confirm-ok" class="btn primary" type="submit" value="ok">Confirmer</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="prompt" class="dialog panel">
+      <form method="dialog">
+        <label id="prompt-label" class="dialog-label" for="prompt-input"></label>
+        <input id="prompt-input" class="search" type="text" maxlength="80" autocomplete="off" enterkeyhint="done">
+        <div class="dialog-actions">
+          <button class="btn" type="submit" value="cancel">Annuler</button>
+          <button id="prompt-ok" class="btn primary" type="submit" value="ok">OK</button>
         </div>
       </form>
     </dialog>

@@ -1,6 +1,6 @@
 // Cas 2 et 3 : pointage d'un numéro (persistant), « Toute la rue faite » puis Annuler.
 const { test, expect } = require('@playwright/test');
-const { ID, STREET, total, trackErrors, openApp, waitReady, tapAddress, statusOf, legendCount, openLegend } = require('./helpers');
+const { ID, STREET, tourTotal, trackErrors, openApp, waitReady, tapAddress, statusOf, legendCount, openLegend } = require('./helpers');
 
 const visibleActions = (page) => page.evaluate(() => [...document.querySelectorAll('#sheet-actions .act')]
   .filter((b) => !b.hidden).map((b) => b.dataset.st));
@@ -27,7 +27,7 @@ test('tap sur un numéro, Fait : l\'état persiste après rechargement', async (
   await expect(page.locator('#toast-action')).toBeVisible();
   expect(await numClass(page, ID.gare28)).toContain('st-fait');
   await expect(legendCount(page, STREET.gare)).toHaveText('1/15');
-  await expect(page.locator('#total-progress')).toHaveText(`1/${total()}`);
+  await expect(page.locator('#total-progress')).toHaveText(`1/${tourTotal()}`);
   await expect(page.locator('#btn-undo')).toBeEnabled();
 
   // seules les actions qui changent le statut sont proposées
@@ -46,13 +46,13 @@ test('tap sur un numéro, Fait : l\'état persiste après rechargement', async (
   expect(await statusOf(page, ID.gare26)).toBe('a_repasser');
   expect(await numClass(page, ID.gare28)).toContain('st-fait');
   expect(await numClass(page, ID.gare26)).toContain('st-a_repasser');
-  await expect(page.locator('#total-progress')).toHaveText(`1/${total()}`);
+  await expect(page.locator('#total-progress')).toHaveText(`1/${tourTotal()}`);
   await expect(page.locator('#btn-undo')).toBeEnabled();  // la pile d'annulation survit à la relance
 
   // Remettre à faire
   await mark(page, ID.gare28, 'a_faire');
   expect(await statusOf(page, ID.gare28)).toBe('a_faire');
-  await expect(page.locator('#total-progress')).toHaveText(`0/${total()}`);
+  await expect(page.locator('#total-progress')).toHaveText(`0/${tourTotal()}`);
   expect(errors).toEqual([]);
 });
 
@@ -80,7 +80,7 @@ test('« Toute la rue faite » puis Annuler : états précédents restaurés', a
   await expect(legendCount(page, STREET.gare)).toHaveText('15/15');
   await expect(page.locator(`.lg-row[data-s="${STREET.gare}"]`)).toHaveClass(/complete/);
   await expect(all).toBeDisabled();
-  await expect(page.locator('#total-progress')).toHaveText(`15/${total()}`);
+  await expect(page.locator('#total-progress')).toHaveText(`15/${tourTotal()}`);
   if (await page.locator('#btn-legend-close').isVisible()) await page.click('#btn-legend-close');
 
   // Annuler 1 : la rue revient à l'état précédent, « à repasser » compris
@@ -101,7 +101,7 @@ test('« Toute la rue faite » puis Annuler : états précédents restaurés', a
   // rien n'est effacé du journal : 3 actions + 4 événements d'annulation (la rue en compte 2)
   await page.reload();
   await waitReady(page);
-  await expect(page.locator('#total-progress')).toHaveText(`0/${total()}`);
+  await expect(page.locator('#total-progress')).toHaveText(`0/${tourTotal()}`);
   await expect(page.locator('#btn-undo')).toBeDisabled();
   const journal = await page.evaluate(() => {
     const events = window.neyronApp.store.allEvents;

@@ -1,7 +1,7 @@
 // Cas 5 : export puis import sur un autre appareil (état identique) ; import d'un fichier non fiable.
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
-const { ID, STREET, total, trackErrors, openApp, waitReady, stateOf } = require('./helpers');
+const { ID, STREET, tourTotal, trackErrors, openApp, waitReady, stateOf } = require('./helpers');
 
 // progression variée : fait, à repasser, une rue entière annulée, une action groupée
 async function makeProgress(page) {
@@ -34,7 +34,7 @@ test('export puis import sur un autre appareil : état identique', async ({ page
   await makeProgress(page);
   const stateA = await stateOf(page);
   const progressA = await page.textContent('#total-progress');
-  expect(progressA).toBe(`3/${total()}`);
+  expect(progressA).toBe(`3/${tourTotal()}`);
 
   const { file, name } = await exportByDownload(page, testInfo);
   expect(name).toMatch(/^neyron-tournees-export-\d{8}-\d{4}\.json$/);
@@ -52,7 +52,7 @@ test('export puis import sur un autre appareil : état identique', async ({ page
   expect(pageB.viewportSize(), 'même profil d\'appareil que A').toEqual(page.viewportSize());
   const errorsB = trackErrors(pageB);
   await openApp(pageB);
-  await expect(pageB.locator('#total-progress')).toHaveText(`0/${total()}`);
+  await expect(pageB.locator('#total-progress')).toHaveText(`0/${tourTotal()}`);
   await pageB.setInputFiles('#import-file', file);
   await expect(pageB.locator('#confirm')).toHaveJSProperty('open', true);
   await expect(pageB.locator('#confirm-msg')).toContainText('Fusionner 5 événements');
@@ -138,7 +138,7 @@ test('import non fiable : fichiers invalides refusés, entrées piégées ignor�
 
   await importFile(page, 'evil.json', JSON.stringify(evil));
   await page.click('#confirm-ok');
-  await expect(page.locator('#total-progress')).toHaveText(`1/${total()}`);
+  await expect(page.locator('#total-progress')).toHaveText(`1/${tourTotal()}`);
   const stored = await page.evaluate(() => {
     const e = window.neyronApp.store.allEvents.find((x) => x.dev === 'zz9' && x.seq === 1);
     return Object.keys(e).sort();

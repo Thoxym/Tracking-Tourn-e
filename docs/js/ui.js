@@ -36,15 +36,32 @@ export class UI {
     this.data = data;
     this.store = store;
     this.streets = data.streets;
-    this.byStreet = this.streets.map((_, i) => map.pointable.filter((a) => a.s === i));
+    this.byStreet = this.streets.map(() => []);  // adresses de la tournée active, par rue (_applyTour)
     this.sheetListeners = [];
+    this.tapOverride = null;  // composition sur la carte (Préparer) : le tap ajoute / retire au lieu de pointer
     this._buildLegend();
+    this._applyTour();
     this._initTheme();
     this._bindControls();
     this._bindMap();
     this.setLegendOpen(desktop.matches);
-    store.onChange(() => this.refresh());
+    store.onChange((d) => {
+      if (d && (d.type === 'tour' || d.type === 'import')) this._applyTour(d.change?.includes('active'));
+      this.refresh();
+    });
     this.refresh();
+  }
+
+  // tournée active : périmètre de la carte, rues de la légende, comptes (refit à chaque changement de tournée)
+  _applyTour(refit = false) {
+    const tour = this.store.activeTour;
+    this.map.setScope(tour ? tour.ids : []);
+    this.byStreet = this.streets.map((_, i) => this.map.pointable.filter((a) => a.s === i && this.map.inScope(a)));
+    this.filterLegend($('legend-search').value);
+    if (refit && this.map._ready) {
+      this.selectStreet(null);
+      this.map.fitAll();
+    }
   }
 
   // ------------------------------------------------------- progression
@@ -219,13 +236,16 @@ export class UI {
     $('legend-search').addEventListener('input', (e) => this.filterLegend(e.target.value));
   }
 
+  // rues de la tournée active correspondant à la recherche
   filterLegend(query) {
     const q = fold(query.trim());
     let shown = 0;
-    for (const li of this.legendRows) {
-      li.hidden = Boolean(q) && !li.dataset.key.includes(q);
+    this.legendRows.forEach((li, i) => {
+      li.hidden = !this.byStreet[i].length || (Boolean(q) && !li.dataset.key.includes(q));
       shown += li.hidden ? 0 : 1;
-    }
+    });
+    const empty = !this.byStreet.some((addrs) => addrs.length);
+    $('legend-empty').textContent = empty ? 'Tournée vide : composez-la dans l\'onglet Préparer.' : 'Aucune rue ne correspond.';
     $('legend-empty').hidden = shown > 0;
   }
 
@@ -326,6 +346,10 @@ export class UI {
   _bindMap() {
     this.map.on('view', () => this._updateScale());
     this.map.on('tap', ({ address }) => {
+      if (this.tapOverride) {
+        if (address) this.tapOverride(address);
+        return;
+      }
       if (address) this.openSheet(address);
       else this.closeSheet();
     });
@@ -389,6 +413,31 @@ export class UI {
     t.hidden = false;
     clearTimeout(this._toastTimer);
     this._toastTimer = setTimeout(() => { t.hidden = true; }, ms);
+  }
+
+  // saisie d'un texte court (nom de tournée) ; null si annulé ou vide
+  prompt(label, value = '', okLabel = 'OK') {
+    const dlg = $('prompt');
+    const input = $('prompt-input');
+    $('prompt-label').textContent = label;
+    $('prompt-ok').textContent = okLabel;
+    input.value = value;
+    dlg.returnValue = '';
+    return new Promise((resolve) => {
+      const onKey = (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();  // Entrée : valider (le premier bouton du formulaire est « Annuler »)
+        dlg.close('ok');
+      };
+      input.addEventListener('keydown', onKey);
+      dlg.addEventListener('close', () => {
+        input.removeEventListener('keydown', onKey);
+        const v = input.value.trim();
+        resolve(dlg.returnValue === 'ok' && v ? v : null);
+      }, { once: true });
+      dlg.showModal();
+      input.select();
+    });
   }
 
   confirm(message, okLabel = 'Confirmer') {

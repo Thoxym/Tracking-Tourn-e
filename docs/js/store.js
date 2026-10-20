@@ -2,8 +2,11 @@
 // L'état courant est dérivé du journal ; rien n'est jamais effacé : « Annuler » ajoute des événements.
 //
 // events : {dev, seq, t, tour, ids[], st, grp, undoOf?}  clé [dev, seq]
-// tours  : {id, name, createdAt, archived}
+// tours  : {id, name, createdAt, updatedAt, archived, ids[]}  ids = composition (adresses de la tournée)
 // meta   : {key, value}  deviceId, seq, activeTour, dataVersion, persistAsked, persist
+//
+// La progression est propre à chaque tournée (champ `tour` des événements). Changer la composition
+// n'efface rien : une adresse retirée puis remise retrouve son statut.
 
 const DB_NAME = 'neyron-tournees';
 const DB_VERSION = 1;
@@ -22,6 +25,11 @@ function randomId(bytes = 6) {
   const a = new Uint8Array(bytes);
   crypto.getRandomValues(a);
   return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function newTour(id, name, ids = []) {
+  const now = Date.now();
+  return { id, name, createdAt: now, updatedAt: now, archived: false, ids: [...ids] };
 }
 
 function openDB() {
@@ -69,13 +77,14 @@ export class Store {
     this.persistent = null;
   }
 
-  static async open(dataVersion) {
+  // presets : tournées prédéfinies des données ({id, name, ids}) ; « default » complète la tournée de la v0.1
+  static async open(dataVersion, presets = []) {
     const s = new Store();
-    await s._init(dataVersion);
+    await s._init(dataVersion, presets);
     return s;
   }
 
-  async _init(dataVersion) {
+  async _init(dataVersion, presets) {
     try {
       this.db = await openDB();
       const r = await transact(this.db, ['meta', 'tours', 'events'], 'readonly', (tx, out) => {
@@ -94,8 +103,20 @@ export class Store {
     this.deviceId = m.deviceId || randomId();
     const ownMax = Math.max(0, ...this.allEvents.filter((e) => e.dev === this.deviceId).map((e) => e.seq));
     this.seq = Math.max(m.seq || 0, ownMax);
-    if (!this.tours.length) this.tours.push({ id: DEFAULT_TOUR, name: 'Tournée', createdAt: Date.now(), archived: false });
-    this.tour = m.activeTour && this.tours.some((t) => t.id === m.activeTour) ? m.activeTour : this.tours[0].id;
+    // migration v0.1 : la tournée « default » n'avait pas de composition, elle reçoit celle du preset
+    // de même id (les 10 rues) ; sa progression, rattachée à l'id, est conservée
+    for (const pr of presets) {
+      const t = this.tours.find((x) => x.id === pr.id);
+      if (!t) this.tours.push(newTour(pr.id, pr.name, pr.ids));
+      else if (!Array.isArray(t.ids)) Object.assign(t, { ids: [...pr.ids], name: t.name === 'Tournée' ? pr.name : t.name, updatedAt: Date.now() });
+    }
+    if (!this.tours.length) this.tours.push(newTour(DEFAULT_TOUR, 'Tournée'));
+    for (const t of this.tours) {
+      if (!Array.isArray(t.ids)) t.ids = [];
+      t.updatedAt ||= t.createdAt || 0;
+    }
+    const usable = (id) => this.tours.some((t) => t.id === id && !t.archived);
+    this.tour = usable(m.activeTour) ? m.activeTour : (this.liveTours()[0] || this.tours[0]).id;
     await this._save({ deviceId: this.deviceId, seq: this.seq, activeTour: this.tour, dataVersion }, this.tours);
     this._reload();
   }
@@ -118,6 +139,72 @@ export class Store {
         else this.state.set(id, e.st);
       }
     }
+  }
+
+  // ------------------------------------------------------------- tournées
+
+  get activeTour() {
+    return this.tours.find((t) => t.id === this.tour);
+  }
+
+  liveTours() {
+    return this.tours.filter((t) => !t.archived).sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  archivedTours() {
+    return this.tours.filter((t) => t.archived).sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  // statuts d'une tournée quelconque (la tournée active a déjà les siens dans this.state)
+  stateOf(tourId) {
+    if (tourId === this.tour) return this.state;
+    const st = new Map();
+    for (const e of this.allEvents.filter((x) => x.tour === tourId).sort(compareEvents)) {
+      for (const id of e.ids) {
+        if (e.st === ST_TODO) st.delete(id);
+        else st.set(id, e.st);
+      }
+    }
+    return st;
+  }
+
+  async createTour(name, ids = []) {
+    const t = newTour(`t-${randomId(5)}`, name, ids);
+    this.tours.push(t);
+    await this._save({}, [t]);
+    await this.setActiveTour(t.id);
+    return t;
+  }
+
+  async updateTour(id, patch) {
+    const t = this.tours.find((x) => x.id === id);
+    if (!t) return null;
+    Object.assign(t, patch, { updatedAt: Date.now() });
+    await this._save({}, [t]);
+    this._emit({ type: 'tour', tour: t, change: Object.keys(patch) });
+    return t;
+  }
+
+  async setActiveTour(id) {
+    if (!this.tours.some((t) => t.id === id)) return;
+    this.tour = id;
+    await this._save({ activeTour: id });
+    this._reload();
+    this._emit({ type: 'tour', tour: this.activeTour, change: ['active'] });
+  }
+
+  // archiver la tournée active fait passer à la plus récente des autres ; la dernière tournée en cours
+  // ne s'archive pas (false). Rien n'est supprimé : une tournée archivée se restaure avec sa progression.
+  async archiveTour(id, archived = true) {
+    if (archived && id === this.tour) {
+      const other = this.liveTours().filter((t) => t.id !== id).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      if (!other) return false;
+      await this.updateTour(id, { archived: true });
+      await this.setActiveTour(other.id);
+      return true;
+    }
+    await this.updateTour(id, { archived });
+    return true;
   }
 
   onChange(fn) {
@@ -232,15 +319,21 @@ export class Store {
     return out;
   }
 
-  // fusion d'événements et de tournées déjà validés : ajout seul, dédoublonnage sur [dev, seq]
+  // fusion d'événements et de tournées déjà validés : événements en ajout seul (dédoublonnage sur
+  // [dev, seq]) ; une tournée connue est remplacée si la version importée est plus récente (updatedAt)
   async merge(events, tours = []) {
     const added = this.newEvents(events);
     const newTours = tours.filter((t) => !this.tours.some((x) => x.id === t.id));
+    const updated = tours.filter((t) => {
+      const local = this.tours.find((x) => x.id === t.id);
+      return local && (t.updatedAt || 0) > (local.updatedAt || 0);
+    });
     const ownMax = Math.max(0, ...added.filter((e) => e.dev === this.deviceId).map((e) => e.seq));
-    if (this.db && (added.length || newTours.length)) {
+    if (this.db && (added.length || newTours.length || updated.length)) {
       await transact(this.db, ['events', 'tours', 'meta'], 'readwrite', (tx) => {
         for (const e of added) tx.objectStore('events').add(e);
         for (const t of newTours) tx.objectStore('tours').add(t);
+        for (const t of updated) tx.objectStore('tours').put(t);
         // sauvegarde de cet appareil réimportée : ne jamais réutiliser un seq déjà pris
         if (ownMax > this.seq) tx.objectStore('meta').put({ key: 'seq', value: ownMax });
       });
@@ -248,8 +341,10 @@ export class Store {
     if (ownMax > this.seq) this.seq = this.meta.seq = ownMax;
     this.allEvents.push(...added);
     this.tours.push(...newTours);
+    for (const t of updated) Object.assign(this.tours.find((x) => x.id === t.id), t);
     this._reload();
-    const result = { type: 'import', added: added.length, duplicates: events.length - added.length, tours: newTours.length };
+    const result = { type: 'import', added: added.length, duplicates: events.length - added.length,
+      tours: newTours.length + updated.length };
     this._emit(result);
     return result;
   }

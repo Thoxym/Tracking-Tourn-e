@@ -21,8 +21,17 @@ const STREET = {
   get gare() { return streetIndex('Rue de la Gare'); },
   get barry() { return streetIndex('Chemin du Barry'); },
 };
-// nombre d'adresses pointables (toute la commune)
+// nombre d'adresses de la commune (toutes affichées sur le plan)
 const total = () => addressData().addresses.filter((a) => !a.ctx).length;
+// tournée active au premier lancement : preset « default » (les 10 rues de la v0.1)
+const tourIds = () => new Set(addressData().presets.find((p) => p.id === 'default').ids);
+const tourTotal = () => tourIds().size;
+// rues ayant au moins une adresse dans la tournée par défaut, et leur compte
+const tourStreets = () => {
+  const ids = tourIds();
+  return addressData().streets.map((st) => ({ ...st, inTour: addressData().addresses.filter((a) => a.s === st.i && ids.has(a.id)).length }))
+    .filter((st) => st.inTour > 0);
+};
 const GPS = {
   gare28: { latitude: 45.81218, longitude: 4.929406, accuracy: 6 },  // point BAN du 28 Rue de la Gare
   gare9: { latitude: 45.814024, longitude: 4.932176, accuracy: 6 },   // point BAN du 9 Rue de la Gare
@@ -79,6 +88,6 @@ async function openLegend(page) {
 }
 
 module.exports = {
-  PYTHON, DOCS, SERVE, ID, STREET, GPS, total, streetIndex,
+  PYTHON, DOCS, SERVE, ID, STREET, GPS, total, tourIds, tourTotal, tourStreets, streetIndex,
   addressData, trackErrors, waitReady, openApp, tapAddress, statusOf, stateOf, legendCount, openLegend,
 };

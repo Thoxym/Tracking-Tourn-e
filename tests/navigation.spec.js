@@ -1,6 +1,6 @@
 // Barre d'onglets Préparer / Distribuer / Contrôler (branche facteur, phase L1).
 const { test, expect } = require('@playwright/test');
-const { ID, GPS, STREET, total, trackErrors, openApp, waitReady, tapAddress, addressData } = require('./helpers');
+const { ID, GPS, STREET, tourTotal, tourStreets, trackErrors, openApp, waitReady, tapAddress, addressData } = require('./helpers');
 
 const tab = (page, name) => page.locator(`#tabbar [data-tab="${name}"]`);
 const current = (page) => page.evaluate(() => window.neyronApp.tabs.current);
@@ -37,21 +37,27 @@ test('Distribuer par défaut, vues exclusives, onglet mémorisé', async ({ page
   expect(errors).toEqual([]);
 });
 
-test('Préparer : les rues de la tournée, une rue s\'ouvre sur la carte', async ({ page }) => {
+test('Préparer : tournée active, rues de la commune, une rue s\'ouvre dans l\'éditeur', async ({ page }) => {
   await openApp(page);
   await tab(page, 'prepare').click();
   const { streets } = addressData();
-  await expect(page.locator('#prep-summary')).toHaveText(`Tournée · ${streets.length} rues · ${total()} adresses`);
+  await expect(page.locator('#tour-list .tour-row')).toHaveCount(1);
+  await expect(page.locator('#tour-list .tour-row.active .vrow-name')).toHaveText('Neyron — 10 rues');
+  await expect(page.locator('#tour-list .tour-row.active .vrow-sub')).toHaveText(`${tourTotal()} adresses · 0 faite`);
+  await expect(page.locator('#prep-tour-name')).toHaveText('Neyron — 10 rues');
+  await expect(page.locator('#prep-summary')).toHaveText(`${tourTotal()} adresses · ${tourStreets().length} rues`);
+  await expect(page.locator('#btn-tour-archive')).toBeDisabled();  // seule tournée en cours
+
   const rows = page.locator('#prep-streets .vrow');
   await expect(rows).toHaveCount(streets.length);
   const gare = rows.nth(STREET.gare);
   await expect(gare.locator('.vrow-name')).toHaveText('Rue de la Gare');
-  await expect(gare.locator('.vrow-sub')).toHaveText('10 pairs · 5 impairs');
-  await expect(gare.locator('.vrow-count')).toHaveText('15 numéros');
-
+  await expect(gare.locator('.vrow-sub')).toHaveText('15/15 dans la tournée');
   await gare.click();
+  await expect(page.locator('#street-editor')).toHaveJSProperty('open', true);
+  await expect(page.locator('#se-title')).toHaveText('Rue de la Gare');
+  await page.click('#se-map');
   expect(await current(page)).toBe('distribute');
-  await expect(page.locator('#view-prepare')).toBeHidden();
   expect(await page.evaluate(() => window.neyronApp.map.selectedStreet)).toBe(STREET.gare);
 });
 
@@ -64,23 +70,23 @@ test('Contrôler : bilan et détail par rue, à jour en direct', async ({ page }
   await tab(page, 'control').click();
   await expect(page.locator('#ctl-done')).toHaveText('1');
   await expect(page.locator('#ctl-again')).toHaveText('1');
-  await expect(page.locator('#ctl-todo')).toHaveText(String(total() - 2));
-  await expect(page.locator('#ctl-summary')).toHaveText(`1 / ${total()} adresses faites · 0 %`);
-  const gare = page.locator('#ctl-streets .vrow').nth(STREET.gare);
+  await expect(page.locator('#ctl-todo')).toHaveText(String(tourTotal() - 2));
+  await expect(page.locator('#ctl-summary')).toHaveText(`1 / ${tourTotal()} adresses faites · 0 %`);
+  const gare = page.locator('#ctl-streets .vrow', { hasText: 'Rue de la Gare' });
   await expect(gare.locator('.vrow-count')).toHaveText('1/151 ↻');
   await expect(gare.locator('.vrow-sub')).toHaveText('13 restantes');
 
   // Annuler depuis la barre du haut : le bilan suit sans changer d'onglet
   await page.click('#btn-undo');
   await expect(page.locator('#ctl-again')).toHaveText('0');
-  await expect(page.locator('#ctl-todo')).toHaveText(String(total() - 1));
+  await expect(page.locator('#ctl-todo')).toHaveText(String(tourTotal() - 1));
 
   // rue entière faite
   await page.evaluate(async (s) => {
     const { store, map } = window.neyronApp;
     await store.setStatus(map.pointable.filter((a) => a.s === s).map((a) => a.id), 'fait');
   }, STREET.barry);
-  const barry = page.locator('#ctl-streets .vrow').nth(STREET.barry);
+  const barry = page.locator('#ctl-streets .vrow', { hasText: 'Chemin du Barry' });
   await expect(barry).toHaveClass(/complete/);
   await expect(barry.locator('.vrow-sub')).toHaveText('rue entière faite');
   await expect(page.locator('#ctl-done')).toHaveText('4');

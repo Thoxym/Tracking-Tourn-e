@@ -6,7 +6,8 @@ import { STATUSES } from './store.js';
 const $ = (id) => document.getElementById(id);
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_EVENTS = 200000;
-const MAX_IDS = 2000;   // une rue entière tient largement (Route de Genève : 105)
+const MAX_IDS = 2000;   // une rue entière tient largement (Route de Genève : 138)
+const MAX_TOUR_IDS = 20000;  // composition d'une tournée (Neyron entière : 941 adresses)
 
 const isStr = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max;
 const isSeq = (v) => Number.isSafeInteger(v) && v >= 1;
@@ -26,11 +27,14 @@ export function validEvent(e) {
 
 export function validTour(t) {
   if (!t || typeof t !== 'object' || !isStr(t.id, 64)) return null;
+  const ids = Array.isArray(t.ids) ? t.ids.slice(0, MAX_TOUR_IDS).filter((id) => isStr(id, 64)) : [];
   return {
     id: t.id,
     name: isStr(t.name, 120) ? t.name : 'Tournée',
     createdAt: isTime(t.createdAt) ? t.createdAt : Date.now(),
+    updatedAt: isTime(t.updatedAt) ? t.updatedAt : 0,  // ancienne sauvegarde : ne remplace jamais une tournée connue
     archived: t.archived === true,
+    ids: [...new Set(ids)],
   };
 }
 
@@ -127,9 +131,13 @@ export class BackupController {
       if (file.size > MAX_FILE_BYTES) throw new Error('fichier trop volumineux');
       const backup = parseBackup(await file.text());
       const fresh = this.store.newEvents(backup.events);
-      const newTours = backup.tours.filter((t) => !this.store.tours.some((x) => x.id === t.id));
+      // tournées nouvelles, ou plus récentes que celles de cet appareil (composition, nom)
+      const changedTours = backup.tours.filter((t) => {
+        const local = this.store.tours.find((x) => x.id === t.id);
+        return !local || (t.updatedAt || 0) > (local.updatedAt || 0);
+      });
       const skipped = backup.invalid ? ` ${plural(backup.invalid, 'entrée invalide ignorée', 'entrées invalides ignorées')}.` : '';
-      if (!fresh.length && !newTours.length) {
+      if (!fresh.length && !changedTours.length) {
         this.ui.toast(`Rien à importer : ${plural(backup.events.length, 'événement déjà présent', 'événements déjà présents')}.${skipped}`, { ms: 5000 });
         return;
       }
@@ -138,11 +146,14 @@ export class BackupController {
         : 'date inconnue';
       const from = backup.deviceId === this.store.deviceId ? 'cet appareil' : `appareil ${backup.deviceId ? backup.deviceId.slice(0, 6) : 'inconnu'}`;
       const unknown = new Set(fresh.flatMap((e) => e.ids).filter((id) => !this.map.byId.has(id))).size;
-      const msg = `Fusionner ${plural(fresh.length, 'événement')} de la sauvegarde du ${when} (${from}) ? Rien n'est supprimé.${skipped}`
+      const names = changedTours.slice(0, 3).map((t) => `« ${t.name} »`).join(', ') + (changedTours.length > 3 ? '…' : '');
+      const tours = changedTours.length ? ` et ${plural(changedTours.length, 'tournée')} (${names})` : '';
+      const msg = `Fusionner ${plural(fresh.length, 'événement')}${tours} de la sauvegarde du ${when} (${from}) ? Rien n'est supprimé.${skipped}`
         + (unknown ? ` ${plural(unknown, 'adresse inconnue', 'adresses inconnues')} de ce plan (ignorées à l'affichage).` : '');
       if (!(await this.ui.confirm(msg, 'Importer'))) return;
       const r = await this.store.merge(backup.events, backup.tours);
-      this.ui.toast(`${plural(r.added, 'événement ajouté', 'événements ajoutés')}${r.duplicates ? `, ${plural(r.duplicates, 'déjà présent', 'déjà présents')}` : ''}`, { ms: 5000 });
+      this.ui.toast(`${plural(r.added, 'événement ajouté', 'événements ajoutés')}${r.duplicates ? `, ${plural(r.duplicates, 'déjà présent', 'déjà présents')}` : ''}`
+        + (r.tours ? `, ${plural(r.tours, 'tournée ajoutée ou mise à jour', 'tournées ajoutées ou mises à jour')}` : ''), { ms: 5000 });
     } catch (err) {
       this.ui.toast(`Import impossible : ${err.message}`, { ms: 6000 });
     } finally {

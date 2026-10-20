@@ -37,6 +37,8 @@ export class MapView {
     this.selectedId = null;
     this.byId = new Map(data.addresses.map((a) => [a.id, a]));
     this.pointable = data.addresses.filter((a) => !a.ctx);
+    this.scope = null;       // ids de la tournée active (null : tout) ; hors tournée = gris, non pointable
+    this.selecting = false;  // composition sur la carte (Préparer) : toutes les adresses sont pointables
     this.handlers = {};
     this.pointers = new Map();
     this.gesture = null;
@@ -140,19 +142,45 @@ export class MapView {
     this.gpsDot.setAttribute('d', d);
   }
 
-  // statut de chaque adresse pointable ; un bâtiment est « à repasser » si l'une de ses adresses l'est,
+  inScope(a) {
+    return !this.scope || this.scope.has(a.id);
+  }
+
+  // périmètre de la tournée active : numéros, points et bâtiments hors tournée en gris, rues sans adresse
+  // de la tournée atténuées
+  setScope(ids) {
+    this.scope = ids ? new Set(ids) : null;
+    const used = new Set();
+    for (const a of this.pointable) {
+      const inside = this.inScope(a);
+      if (inside) used.add(a.s);
+      const { num, dot } = this.addrEls.get(a.id);
+      num.classList.toggle('out', !inside);
+      dot.classList.toggle('out', !inside);
+    }
+    for (const { path, ids: bids } of this.buildingEls.values()) {
+      if (bids.length) path.classList.toggle('out', !bids.some((id) => this.inScope(this.byId.get(id))));
+    }
+    this.streetGroups.forEach((gs, i) => gs.forEach((g) => g.classList.toggle('dim', !used.has(i))));
+  }
+
+  // statut de chaque adresse de la tournée ; un bâtiment est « à repasser » si l'une de ses adresses l'est,
   // « fait » si toutes le sont
   applyStatuses(statusOf) {
     for (const a of this.pointable) {
-      const st = statusOf(a.id);
+      const st = this.inScope(a) ? statusOf(a.id) : null;
       const { num, dot } = this.addrEls.get(a.id);
       for (const e of [num, dot]) {
         e.classList.toggle('st-fait', st === 'fait');
         e.classList.toggle('st-a_repasser', st === 'a_repasser');
       }
     }
-    for (const { path, ids } of this.buildingEls.values()) {
-      if (!ids.length) continue;
+    for (const { path, ids: all } of this.buildingEls.values()) {
+      const ids = all.filter((id) => this.inScope(this.byId.get(id)));
+      if (!ids.length) {
+        path.classList.remove('st-fait', 'st-a_repasser');
+        continue;
+      }
       const sts = ids.map(statusOf);
       const st = sts.includes('a_repasser') ? 'a_repasser' : sts.every((s) => s === 'fait') ? 'fait' : '';
       path.classList.toggle('st-fait', st === 'fait');
@@ -287,8 +315,20 @@ export class MapView {
     return this.pointers.size > 0;
   }
 
+  // toute la tournée active (tout le plan si elle est vide ou s'il n'y en a pas)
   fitAll(animate = true) {
-    this.fitBounds(0, 0, this.W, this.H, { animate, margin: 8 });
+    const pts = this.scope ? this.pointable.filter((a) => this.scope.has(a.id)) : [];
+    if (!pts.length) {
+      this.fitBounds(0, 0, this.W, this.H, { animate, margin: 8 });
+      return;
+    }
+    this.fitBounds(...this._bounds(pts, 40), { animate, minSize: 220 });
+  }
+
+  _bounds(pts, m) {
+    const xs = pts.map((a) => a.x);
+    const ys = pts.map((a) => a.y);
+    return [Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) + m, Math.max(...ys) + m];
   }
 
   animateTo(cx, cy, k, ms = 380) {
@@ -334,12 +374,11 @@ export class MapView {
     if (!visible && this.selectedId && this.byId.get(this.selectedId)?.s === i) this.selectAddress(null);
   }
 
+  // adresses de la rue dans la tournée active, sinon toute la rue
   streetBounds(i) {
-    const pts = this.pointable.filter((a) => a.s === i);
-    const xs = pts.map((a) => a.x);
-    const ys = pts.map((a) => a.y);
-    const m = 15;
-    return [Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) + m, Math.max(...ys) + m];
+    const all = this.pointable.filter((a) => a.s === i);
+    const inside = all.filter((a) => this.inScope(a));
+    return this._bounds(inside.length ? inside : all, 15);
   }
 
   selectStreet(i, { zoom = true } = {}) {
@@ -372,7 +411,7 @@ export class MapView {
     let best = null;
     let bestD = TAP_RADIUS_PX;
     for (const a of this.pointable) {
-      if (this.hidden.has(a.s)) continue;
+      if (this.hidden.has(a.s) || (!this.selecting && !this.inScope(a))) continue;
       const d = Math.hypot(a.x - wx, a.y - wy) * this.k;
       if (d <= bestD) {
         bestD = d;

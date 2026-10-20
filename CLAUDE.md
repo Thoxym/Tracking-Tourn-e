@@ -205,7 +205,28 @@ npx playwright test                                 # tests (serveur lancé par 
   - App : légende devenue liste des rues **avec recherche** (sans accents ni casse ; Ctrl+Z dans le champ n'annule pas la progression), recherche aussi dans Préparer. Champs à 16 px (sinon iOS zoome) et sélectionnables malgré `user-select: none`.
   - Tests pilotés par les données (`total()`, `STREET` recherché par nom). 69 réussis, 1 ignoré.
   - **Perf** (WebKit Windows, rendu logiciel) : environ 220 ms par image de zoom contre 170 ms pour `main` (229 adresses), soit +30 à 50 %. Acceptable à Neyron. Pour Lyon 3e (milliers de numéros), il faudra ne dessiner que ce qui est à l'écran ou passer au canvas.
-- [ ] **L3 — Tournées**. IndexedDB v2 et migration (la tournée `default` et sa progression sont conservées). Créer, renommer, archiver, choisir la tournée active. Sélection par rue entière, côté pair / impair, plage de numéros ou numéro par numéro. Hors tournée active : en gris, non pointable.
+- [x] **L3 — Tournées** ✅ (20/10/2026).
+  - **Modèle** : tournée `{id, name, createdAt, updatedAt, archived, ids[]}`, où `ids` est la composition, rangée dans l'ordre des données.
+    - Pas de changement de version IndexedDB : les fiches de `tours` sont seulement enrichies.
+    - **Migration** au démarrage (`Store.open(dataVersion, presets)`) : une tournée sans `ids` reçoit ceux du preset de même id. La tournée `default` de la v0.1 devient « Neyron — 10 rues », progression et pile d'annulation conservées. Un premier lancement crée les presets.
+  - **Store** :
+    - `activeTour`, `liveTours()`, `archivedTours()` ;
+    - `stateOf(tourId)` : statuts d'une tournée non active ;
+    - `createTour`, `updateTour`, `setActiveTour` (émettent `{type: 'tour'}`) ;
+    - `archiveTour`, qui bascule sur la plus récente des autres et refuse d'archiver la dernière tournée en cours. Rien n'est supprimé.
+  - **Import** : `validTour` accepte `ids` (20 000 au plus) et `updatedAt`. Une tournée connue est remplacée si la version importée est plus récente (dernière écriture gagnante) ; une ancienne sauvegarde sans `updatedAt` ne remplace jamais rien. La confirmation nomme les tournées nouvelles ou mises à jour.
+  - **Carte** :
+    - `map.setScope(ids)` : hors tournée, numéros, points et bâtiments en gris (`.out`), rues sans adresse de la tournée atténuées (`.dim`) ;
+    - hors tournée, pas de tap (`hitTest`), pas de statut affiché, absent de l'encart GPS ;
+    - « voir tout » cadre la tournée ; changer de tournée recadre ;
+    - `map.selecting` rend tout pointable pendant la composition.
+  - **Interface** : `ui._applyTour()` recalcule `byStreet` (adresses de la tournée par rue), donc légende (« Rues de la tournée », message si vide), progression, « Toute la rue faite » et Contrôler. `ui.prompt()` sert à la saisie d'un nom, `ui.tapOverride` à la composition.
+  - **Préparer** :
+    - liste des tournées (active cochée, « n adresses · k faites »), Nouvelle tournée (nom par défaut « Tournée du jj/mm »), Renommer, Archiver, section repliable « Tournées archivées » (un toucher restaure) ;
+    - rues de la commune avec recherche (« k/n dans la tournée ») ; une rue ouvre l'**éditeur** : Tous / Pairs / Impairs, plage du n° au n°, aperçu « x numéros concernés · y déjà dans la tournée », Ajouter, Retirer, Voir sur la carte ;
+    - **Choisir sur la carte** : la carte s'affiche avec ses contrôles et une barre « Tournée : n adresses — Terminer ». Un tap ajoute ou retire. Changer d'onglet termine la composition.
+  - Tests : `tests/tournees.spec.js` (7 × 2 : migration d'une base v0.1 réelle, hors tournée non pointable, composition par rue, progression par tournée, renommer / archiver / restaurer, composition sur la carte, export / import des tournées). Les anciens tests sont adaptés (tournée par défaut de 229 adresses). Suite : 83 réussis, 1 ignoré ; tournées et navigation stables sur 3 répétitions.
+  - Limite assumée : les changements de composition ne s'annulent pas (Annuler ne concerne que les statuts).
 - [ ] **L4 — Préparer**. Ordre des rues fixé à la main. Charge estimée (adresses, mètres, durée paramétrable). Adresses manquantes ou sans bâtiment. Import d'un secteur (CSV `voie;début;fin;côté`).
 - [ ] **L5 — Distribuer**. Distribué / anomalie + motif en 2 taps, rue entière. « Reprendre » : prochaine adresse non traitée dans l'ordre de la tournée. Gros boutons à une main.
 - [ ] **L6 — Contrôler**. Synthèse (distribuées, restantes, anomalies par motif et par rue), liste des non traitées, clôture de la tournée, rapport CSV / JSON.
@@ -462,7 +483,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **Import = donnée non fiable** : `parseBackup()` vérifie `app`, `schema`, puis chaque événement champ par champ (types, `st` ∈ statuts, `seq` entier ≥ 1, longueurs ≤ 64-140 caractères, ≤ 2000 ids, ≤ 200 000 événements, fichier ≤ 20 Mo) ; les entrées invalides sont ignorées et comptées, les **champs inconnus retirés** ; affichage uniquement par `textContent`. Confirmation avant fusion (nombre d'événements, date, appareil source, entrées ignorées, adresses inconnues du plan). Rien n'est jamais supprimé.
 - Les événements importés d'un autre appareil ne sont pas annulables (la pile d'annulation ne contient que les actions de l'appareil). Réimporter une sauvegarde de cet appareil relève `seq` au maximum importé (jamais de clé réutilisée).
 - Le sélecteur de fichiers est ouvert par un `<label for>` (le plus fiable sur iOS) ; l'`input` est masqué visuellement (`.vh`), pas en `display: none`.
-- Une tournée par défaut est créée automatiquement, avec l'id fixe **`default`** (identique sur tous les appareils, pour que la fusion d'exports retombe sur la même tournée) ; « Nouvelle tournée » attend la v0.2.
+- Une tournée par défaut est créée automatiquement, avec l'id fixe **`default`** (identique sur tous les appareils, pour que la fusion d'exports retombe sur la même tournée) ; « Nouvelle tournée » attend la v0.2. *Branche facteur : tournées multiples et composition en L3 (§2 bis).*
 - Écritures : une transaction par action (événements + `seq`), requêtes émises sans `await` intermédiaire (certains Safari valident la transaction dès qu'on rend la main) ; `add` et jamais `put` pour les événements. Une action dont rien ne change (déjà dans ce statut) n'écrit rien.
 - API de `Store` : `open(dataVersion)`, `status(id)`, `setStatus(ids, st)`, `undo()`, `canUndo()`, `onChange(fn)`, `requestPersist()`, `allEvents`, `deviceId`, `persistent`, `error`.
 
@@ -562,6 +583,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **`hidden` et `all: unset`** : `all: unset` sur les boutons annule `hidden`. Ajouter `[hidden]{display:none!important}`.
 - **Couleurs** sur 6 chiffres (`#888` mal interprété a déjà donné du bleu marine avec reportlab).
 - **Doublons BAN** : une adresse peut figurer deux fois avec le même `id` (deux entrées, ex. 2 Impasse Privée des Capucins). L'id étant la clé de progression, le pipeline garde la première occurrence et le signale.
+- **Entrée dans un `<dialog>` à formulaire** : elle déclenche le premier bouton `submit` du formulaire (ici « Annuler »). `ui.prompt` intercepte Entrée pour valider.
 - **Champs de saisie sur iOS** : police d'au moins 16 px, sinon Safari zoome la page au focus. Et `user-select: text` sur le champ, puisque le `body` est en `user-select: none`.
 - **Pas de serveur LAN** : le SW ne doit jamais attendre le réseau pour servir l'app.
 - **iPhone sur `http://<IP du PC>:8000`** : ce n'est pas un contexte sécurisé. Safari y **refuse la localisation sans rien demander** (erreur « refusée », quels que soient les réglages), et il n'y a ni service worker ni Wake Lock. Seule l'interface se teste ainsi ; le GPS exige HTTPS (GitHub Pages). L'app l'annonce désormais (`isSecureContext`) et le panneau debug affiche « contexte sécurisé ».
@@ -719,3 +741,11 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - Couleurs : plutôt qu'une couleur unique, une palette de 8 teintes attribuée par voisinage, pour savoir à quelle rue appartient un numéro près d'un carrefour. Le vert et l'orange restent réservés aux statuts.
   - Rues triées par ordre alphabétique et cherchables.
   - Doublon BAN : on garde la première occurrence.
+- **20/10/2026** — L3 : tournées.
+  - La composition est une liste d'ids dans la fiche de tournée, sans nouvelle version IndexedDB.
+  - La tournée `default` de la v0.1 est migrée vers le preset « 10 rues » avec sa progression.
+  - La progression reste propre à chaque tournée.
+  - Hors tournée : gris et non pointable.
+  - Composition par rue (côté, plage) ou sur la carte.
+  - Archivage plutôt que suppression.
+  - Fusion des tournées importées : dernière écriture gagnante (`updatedAt`).

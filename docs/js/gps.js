@@ -300,7 +300,7 @@ export class GpsController {
     $('gps-indicator').className = `gps-ind q-${q || 'none'}`;
 
     const items = pos && pos.out === 0
-      ? nearest(this.map.pointable, pos.x, pos.y, (a) => !this.map.hidden.has(a.s) && this.store.status(a.id) !== ST_DONE)
+      ? nearest(this.map.pointable, pos.x, pos.y, (a) => this.map.inScope(a) && !this.map.hidden.has(a.s) && this.store.status(a.id) !== ST_DONE)
       : [];
     const dark = this.ui.isDark();
     this.rows.forEach((row, i) => {

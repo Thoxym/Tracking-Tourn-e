@@ -24,7 +24,7 @@ async function start() {
   const splash = document.getElementById('loading');
   try {
     const [data, plan] = await Promise.all([loadJSON('./data/addresses.json'), loadJSON('./data/plan.json')]);
-    const store = await Store.open(data.version);
+    const store = await Store.open(data.version, data.presets || []);
     const map = new MapView(document.getElementById('map'), data, plan);
     const ui = new UI(map, data, store);
     const gps = new GpsController({ map, ui, store, data });

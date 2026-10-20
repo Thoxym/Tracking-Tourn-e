@@ -313,6 +313,13 @@ button { font: inherit; color: inherit; }
 .num.st-fait { fill: var(--fait); opacity: 0.45; font-weight: 600; }
 .num.st-a_repasser { fill: var(--on-status); stroke: var(--repasser); stroke-width: 0.62em; }  /* pastille orange */
 
+/* hors de la tournée active : gris, non pointable ; rues sans adresse de la tournée atténuées */
+.num.out { fill: var(--ctx); font-weight: 500; }
+.dot.out { stroke: var(--ctx); stroke-width: 4px; opacity: 0.7; }
+.bld.out { fill: var(--bld); fill-opacity: 1; stroke: var(--bld-stroke); stroke-opacity: 1; stroke-width: 0.5px; }
+.s.dim .trace { fill-opacity: 0.1; }
+.s.dim .slabel { fill: var(--ctx); }
+
 .sel-ring {
   fill: var(--accent);
   fill-opacity: 0.14;
@@ -788,8 +795,10 @@ button { font: inherit; color: inherit; }
 .tab[aria-current="page"] .ico { stroke-width: 2.4; }
 .tab:active { background: var(--surface-2); }
 
-/* hors de l'onglet Distribuer : la carte reste en place (taille, GPS) mais ses commandes disparaissent */
-#app:not([data-tab="distribute"]) :is(#legend, #sheet, #nearby, .mapctl, #scalebar) { visibility: hidden; }
+/* hors de l'onglet Distribuer : la carte reste en place (taille, GPS) mais ses commandes disparaissent,
+   sauf zoom et échelle pendant la composition sur la carte (Préparer) */
+#app:not([data-tab="distribute"]) :is(#legend, #sheet, #nearby) { visibility: hidden; }
+#app:not([data-tab="distribute"]):not([data-mode="select"]) :is(.mapctl, #scalebar) { visibility: hidden; }
 
 .view {
   position: absolute;
@@ -817,6 +826,53 @@ button { font: inherit; color: inherit; }
 .view-sec h3 { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
 .view-note { margin: 0; padding: 0 4px; font-size: 13px; color: var(--text-2); }
 .btn.wide { width: 100%; }
+.btn:disabled { opacity: 0.45; cursor: default; transform: none; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.btn-row .btn { flex: 1 1 auto; }
+.vlist.vlist-top { margin-bottom: 10px; }
+
+/* tournées */
+.tour-row::before { background: var(--border); }
+.tour-row.active::before { background: var(--accent); }
+.tour-row.active .vrow-name { color: var(--accent); }
+.vrow-check { color: var(--accent); }
+.archived { margin: 10px -14px -12px; border-top: 1px solid var(--border); }
+.archived summary { min-height: var(--tap); display: flex; align-items: center; padding: 0 14px; color: var(--text-2); font-weight: 600; cursor: pointer; }
+.archived .vlist { margin: 0; }
+
+/* composition sur la carte */
+.select-bar {
+  position: absolute;
+  z-index: 30;
+  left: calc(var(--safe-l) + 8px);
+  right: calc(var(--safe-r) + var(--gap) + var(--tap) + 8px);  /* laisse la colonne des contrôles */
+  bottom: calc(var(--bottom-ui) + 8px);
+  max-width: 460px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 14px;
+  border-color: var(--accent);
+}
+.select-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.select-text .muted { margin: 0; font-size: 13px; }
+
+/* éditeur de rue, saisie */
+#street-editor, #prompt { width: min(420px, calc(100vw - 32px)); }
+.dialog h2 { margin-bottom: 2px; }
+.dialog-label { display: block; margin-bottom: 8px; font-size: 16px; }
+.dialog .search { margin-bottom: 4px; }
+.dialog .dialog-actions + .dialog-actions { margin-top: 8px; }
+.dialog-actions .btn { flex: 1 1 0; }
+.seg { display: flex; margin: 14px 0 10px; padding: 3px; border: 0; border-radius: 10px; background: var(--surface-2); }
+.seg label { flex: 1; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span { display: flex; align-items: center; justify-content: center; min-height: 40px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+.seg input:checked + span { background: var(--surface); color: var(--accent); box-shadow: var(--shadow); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); }
+.range { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.range label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); }
+.se-preview { margin: 10px 0 14px !important; font-size: 14px !important; color: var(--text-2); }
 
 .vlist { list-style: none; margin: 0 -14px -12px; padding: 0; }
 .vrow {

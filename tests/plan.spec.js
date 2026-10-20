@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
-const { DOCS, ID, addressData, total, trackErrors, openApp, statusOf, openLegend } = require('./helpers');
+const { DOCS, ID, addressData, total, tourTotal, tourStreets, trackErrors, openApp, statusOf, openLegend } = require('./helpers');
 
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
@@ -15,14 +15,16 @@ test('toute la commune : 941 adresses sur 90 voies, toutes pointables', async ({
   await expect(page.locator('#map text.num')).toHaveCount(addresses.length);
   await expect(page.locator('#map text.num.ctx')).toHaveCount(0);
   expect(await page.evaluate(() => window.neyronApp.map.pointable.length)).toBe(total());
-  await expect(page.locator('#total-progress')).toHaveText(`0/${total()}`);
-
-  // une ligne de légende par rue, dans l'ordre alphabétique (sans accents), comptes conformes aux données
-  await expect(page.locator('.lg-row')).toHaveCount(streets.length);
-  for (const st of streets) {
-    await expect(page.locator(`.lg-row[data-s="${st.i}"] .lg-count`)).toHaveText(`0/${st.count}`);
-  }
   expect(streets.reduce((sum, st) => sum + st.count, 0)).toBe(total());
+
+  // tournée active au premier lancement : les 10 rues ; le reste de la commune en gris
+  await expect(page.locator('#total-progress')).toHaveText(`0/${tourTotal()}`);
+  await expect(page.locator('#map text.num.out')).toHaveCount(total() - tourTotal());
+  const inTour = tourStreets();
+  await expect(page.locator('.lg-row:not([hidden])')).toHaveCount(inTour.length);
+  for (const st of inTour) {
+    await expect(page.locator(`.lg-row[data-s="${st.i}"] .lg-count`)).toHaveText(`0/${st.inTour}`);
+  }
   const keys = streets.map((st) => fold(st.name));
   expect(keys).toEqual([...keys].sort());
 
@@ -53,7 +55,7 @@ test('couleurs des rues : palette sans les couleurs de statut', async ({ page })
 test('légende : recherche de rue sans accents ni casse', async ({ page }) => {
   await openApp(page);
   await openLegend(page);
-  const { streets } = addressData();
+  const streets = tourStreets();  // la légende liste les rues de la tournée active
   const search = page.locator('#legend-search');
   await search.fill('ecoles');
   const expected = streets.filter((st) => fold(st.name).includes('ecoles')).map((st) => st.name);
@@ -167,7 +169,7 @@ test('gestes : glisser, pincement, double tap, appui long, tap en vue d\'ensembl
     out.overviewNoSheet = sheetHidden();
 
     // tap sur un numéro en bas d'écran : panneau ouvert, la carte remonte l'adresse au-dessus
-    const a = map.pointable.find((p) => p.s === 2);
+    const a = map.pointable.find((p) => map.inScope(p));
     map.setView(a.x, a.y - (box.height * 0.38) / 2.5, 2.5); await frame();
     const [sx, sy] = map.toScreen(a.x, a.y);
     ev('pointerdown', 1, sx, sy); ev('pointerup', 1, sx, sy); await wait(700);

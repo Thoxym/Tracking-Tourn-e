@@ -1,12 +1,14 @@
 // Cas 4 : position simulée sur la Rue de la Gare, encart des adresses les plus proches.
 const { test, expect } = require('@playwright/test');
-const { ID, GPS, addressData, trackErrors, openApp, statusOf } = require('./helpers');
+const { ID, GPS, addressData, tourIds, trackErrors, openApp, statusOf } = require('./helpers');
 
-// les n adresses pointables les plus proches d'une adresse, calculées sur les données du pipeline
+// les n adresses de la tournée active (preset « default ») les plus proches d'une adresse, calculées
+// sur les données du pipeline
 function nearestIds(id, n = 3, exclude = []) {
   const { addresses } = addressData();
+  const scope = tourIds();
   const o = addresses.find((a) => a.id === id);
-  return addresses.filter((a) => !a.ctx && !exclude.includes(a.id))
+  return addresses.filter((a) => scope.has(a.id) && !exclude.includes(a.id))
     .map((a) => ({ id: a.id, d: Math.hypot(a.x - o.x, a.y - o.y) }))
     .sort((p, q) => p.d - q.d).slice(0, n).map((p) => p.id);
 }
