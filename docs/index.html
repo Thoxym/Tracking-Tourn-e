@@ -115,6 +115,58 @@
       </div>
     </section>
 
+    <section id="view-prepare" class="view" hidden aria-label="Préparer la tournée">
+      <div class="view-body">
+        <div class="view-sec">
+          <h2>Tournée en cours</h2>
+          <p id="prep-summary" class="muted"></p>
+        </div>
+        <div class="view-sec">
+          <h3>Rues</h3>
+          <ul id="prep-streets" class="vlist"></ul>
+        </div>
+        <p class="view-note">Bientôt : choisir les rues de la commune, composer et ordonner sa tournée, estimer la charge de travail, vérifier les adresses manquantes.</p>
+      </div>
+    </section>
+
+    <section id="view-control" class="view" hidden aria-label="Contrôler la tournée">
+      <div class="view-body">
+        <div class="view-sec">
+          <h2>Bilan de la tournée</h2>
+          <div class="stats">
+            <div class="stat stat-done"><span id="ctl-done" class="stat-n">0</span><span class="stat-l">faites</span></div>
+            <div class="stat"><span id="ctl-todo" class="stat-n">0</span><span class="stat-l">restantes</span></div>
+            <div class="stat stat-again"><span id="ctl-again" class="stat-n">0</span><span class="stat-l">à repasser</span></div>
+          </div>
+          <div class="progress"><span id="ctl-bar"></span></div>
+          <p id="ctl-summary" class="muted"></p>
+        </div>
+        <div class="view-sec">
+          <h3>Par rue</h3>
+          <ul id="ctl-streets" class="vlist"></ul>
+        </div>
+        <button id="ctl-export" class="btn primary wide" type="button">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Exporter la progression
+        </button>
+        <p class="view-note">Bientôt : motifs d'anomalie, liste des adresses non traitées, clôture de tournée et rapport CSV.</p>
+      </div>
+    </section>
+
+    <nav id="tabbar" class="tabbar" aria-label="Étapes de la tournée">
+      <button class="tab" type="button" data-tab="prepare">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5h6v3H9z"/><path d="M15 5h2a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 17 21H7a1.5 1.5 0 0 1-1.5-1.5v-13A1.5 1.5 0 0 1 7 5h2"/><path d="M9 13l2 2 4-4"/></svg>
+        <span>Préparer</span>
+      </button>
+      <button class="tab" type="button" data-tab="distribute">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>
+        <span>Distribuer</span>
+      </button>
+      <button class="tab" type="button" data-tab="control">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20.5h17"/><path d="M6.5 17V11M12 17V5.5M17.5 17v-8"/></svg>
+        <span>Contrôler</span>
+      </button>
+    </nav>
+
     <div id="update-banner" class="banner panel" hidden role="status">
       <span>Nouvelle version disponible</span>
       <button id="btn-update" class="btn primary" type="button">Recharger</button>

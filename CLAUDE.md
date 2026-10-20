@@ -52,7 +52,7 @@ npx playwright test                                 # tests (serveur lancé par 
 
 ## 2. Plan d'action v0.1 (à cocher au fil de l'eau)
 
-**État : phases 0 à 9 terminées, phase 10 déployée le 19/10/2026 : app en ligne sur https://thoxym.github.io/Tracking-Tourn-e/ (dépôt public github.com/Thoxym/Tracking-Tourn-e, `main`, Pages sur `/docs`). Historique réécrit en e-mail `noreply` (identifiants des commits changés : `2ccfec2` phases 0-4 … `6fd0887` phase 9, `9f7d545` BASE_URL). Reste : checklist iPhone (§3) par l'utilisateur. Tout nouveau push reste soumis à son accord (règle 3).**
+**État : phases 0 à 9 terminées, phase 10 déployée le 19/10/2026 : app en ligne sur https://thoxym.github.io/Tracking-Tourn-e/ (dépôt public github.com/Thoxym/Tracking-Tourn-e, `main`, Pages sur `/docs`). Historique réécrit en e-mail `noreply` (identifiants des commits changés : `2ccfec2` phases 0-4 … `6fd0887` phase 9, `9f7d545` BASE_URL). Reste : checklist iPhone (§3) par l'utilisateur. Depuis le 20/10/2026, le travail se fait sur la branche **`dev_tracking_tournee_laposte`** (produit facteur, plan en §2 bis ; itinéraire reporté). Tout nouveau push reste soumis à l'accord de l'utilisateur (règle 3).**
 
 ### Phase 0 — Initialisation ✅
 - [x] `git init` (local uniquement, branche `main`).
@@ -143,6 +143,70 @@ npx playwright test                                 # tests (serveur lancé par 
 - [x] Ruleset `protect-main` (branche par défaut, aucune exception) : suppression et force-push interdits.
 - [x] Site vérifié : types MIME corrects, HSTS 1 an, `http://` → 301, **51 tests réussis contre le site en ligne** (`BASE_URL=… npx playwright test`).
 - [ ] Checklist iPhone (§3), par l'utilisateur.
+
+---
+
+## 2 bis. Branche `dev_tracking_tournee_laposte` : produit « facteur » (créée le 20/10/2026)
+
+`main` garde la v0.1 en ligne. Cette branche fait évoluer l'app vers la **distribution du courrier** : savoir ce qui a été distribué, ce qui reste à traiter, si une rue est entièrement couverte, pourquoi une adresse n'a pas pu être desservie, et reprendre une tournée interrompue sans oublier de boîte. Utilisable **d'une seule main**, sans menus imbriqués. **Pas de calcul d'itinéraire** : la personne compose sa tournée elle-même. Une proposition d'optimisation viendra plus tard (§12 A).
+
+**Interface** : une barre d'onglets en bas, sobre, avec trois onglets :
+- **Préparer** : rues, secteur, numéros, charge de travail, adresses manquantes ;
+- **Distribuer** : position, adresses à traiter, pointage d'un numéro ou d'une rue, anomalies sans interrompre la tournée ;
+- **Contrôler** : distribuées, non traitées, motifs, rapport exportable.
+
+### Architecture : ce qui tient, ce qui doit évoluer
+| Besoin | Aujourd'hui | Évolution | Quand |
+|---|---|---|---|
+| Pointage hors ligne, rue entière, annulation, reprise après relance | journal d'événements IndexedDB, état dérivé, pile d'annulation persistante | aucune (socle réutilisé) | — |
+| Plusieurs tournées | store `tours` et champ `tour` dans chaque événement, mais l'interface ne connaît que `default` | tournée = nom + sélection ordonnée d'adresses ; IndexedDB v2 avec migration de `default` | branche |
+| Sélectionner librement des rues | 10 rues figées dans `config.py`, 229 adresses | pipeline en mode **commune entière** (942 adresses, 90 voies), sélection dans l'app | branche |
+| Couleurs | une couleur par rue | impossible avec 90 voies : couleurs par **statut et sélection**, liste de rues avec recherche à la place de la légende | branche |
+| Anomalies | statuts fait / à repasser / à faire | statut `anomalie` + **motif codé** (liste fermée) ; export en `schema: 2`, `schema: 1` toujours importable | branche |
+| Charge de travail, adresses manquantes | rien | pipeline : longueur de chaque voie, bâtiments sans adresse, adresses sans bâtiment ; app : durée estimée paramétrable | branche |
+| Rapport | export JSON brut | synthèse à l'écran, rapport CSV et JSON par la feuille de partage | branche |
+| Navigation | une seule vue carte | barre d'onglets, 3 vues ; la carte est partagée entre Préparer et Distribuer (même `MapView`) ; `ui.js` découpé en `views/*.js` | branche |
+| Autres communes ou secteurs (Lyon 3e) | un seul jeu de données précaché | paquets de données par secteur, téléchargés et mis en cache à la demande ; au-delà de quelques milliers de numéros, le SVG devient lourd (masquage hors écran ou canvas) | plus tard |
+| Remplaçant, plusieurs téléphones, encadrement | export/import manuel | synchro = **backend** (authentification, chiffrement, hébergement UE) ; GitHub Pages ne suffit plus. Le journal en ajout seul, à clés `(dev, seq)`, est déjà prêt pour une fusion | plus tard |
+| Boîtes aux lettres | la BAN donne des **numéros**, pas des boîtes | nombre de boîtes par adresse saisi localement (immeubles) | plus tard |
+| Itinéraire optimisé | — | graphe piéton + voyageur de commerce (§12 A) | plus tard |
+| Usage professionnel réel | app perso, dépôt public, origine partagée | cadre RGPD salarié (CNIL), DPO, MDM, origine dédiée, déploiement non public ; **ni nom ni logo La Poste** sur un site public sans autorisation | à valider avant tout usage réel |
+
+- **Code** : vanilla sans framework, ça tient pour 3 vues. Si les formulaires se multiplient, une petite bibliothèque intégrée au dépôt (Preact ou Lit, sans bundler) est envisageable, mais pas maintenant.
+- **RGPD (renforcé)** :
+  - Certains motifs concernent les occupants (« destinataire inconnu ») : ce sont des données personnelles. Donc codes seulement, pas de note libre par défaut, tout reste sur l'appareil.
+  - Un rapport horodaté, c'est le suivi de l'activité d'un salarié : rapport **agrégé par défaut**, heures en option.
+  - La trace GPS n'est jamais enregistrée.
+- **Déploiement de la branche** : Pages sert `main`. Pour tester sur l'iPhone, deux options :
+  - publier temporairement la branche sur Pages, ce qui remplace la v0.1 ;
+  - utiliser un second dépôt.
+
+  Dans les deux cas, l'origine est la même (`thoxym.github.io`). Préfixes IndexedDB, caches et `localStorage` **distincts de `neyron-tournees`** si les deux apps coexistent. À décider en L8.
+
+### Plan de la branche (à cocher)
+- [x] **L1 — Navigation** ✅ (20/10/2026).
+  - `js/tabs.js` (`TabBar`) : barre en bas, 56 px + safe-area, `aria-current="page"`, onglet mémorisé dans `localStorage['neyron-tournees.tab']`, Distribuer par défaut.
+  - **La carte reste en place sous les vues** : Préparer et Contrôler sont des panneaux opaques par-dessus, sans redimensionnement, et le GPS ou le suivi continuent. Hors Distribuer, légende, panneau, encart, échelle et contrôles sont en `visibility: hidden`, ce qui garde des tailles valables pour `updatePadding`.
+  - `--bottom-ui` (barre + safe-area) remplace `--safe-b` pour tout ce qui est ancré en bas ; `#map` s'arrête au-dessus de la barre.
+  - Quitter Distribuer ferme le panneau d'adresse et le menu.
+  - « Rues » depuis un autre onglet ramène à la carte, légende ouverte (écouteur en capture sur `document`).
+  - Grand écran : encart GPS et échelle à droite de la légende ouverte (`:has`).
+  - `js/views/prepare.js` (squelette) : tournée en cours (nom, rues, adresses), liste des rues (pairs / impairs, nombre de numéros). Une rue ouvre la carte, rue sélectionnée et cadrée.
+  - `js/views/control.js` (squelette) : faites / restantes / à repasser, barre de progression, détail par rue mis à jour en direct (`store.onChange`), export.
+  - Rendu des lignes partagé dans `js/views/common.js`.
+  - Tests : `tests/navigation.spec.js` (7 tests × 2 moteurs). Suite complète : 65 réussis, 1 ignoré ; navigation et GPS stables sur 3 répétitions.
+- [ ] **L2 — Commune entière**. Pipeline : toutes les voies, longueur par voie, contrôles adaptés (942 adresses). Couleurs par statut. Liste des rues avec recherche. Tests pilotés par les données (fin du 229 codé en dur).
+- [ ] **L3 — Tournées**. IndexedDB v2 et migration (la tournée `default` et sa progression sont conservées). Créer, renommer, archiver, choisir la tournée active. Sélection par rue entière, côté pair / impair, plage de numéros ou numéro par numéro. Hors tournée active : en gris, non pointable.
+- [ ] **L4 — Préparer**. Ordre des rues fixé à la main. Charge estimée (adresses, mètres, durée paramétrable). Adresses manquantes ou sans bâtiment. Import d'un secteur (CSV `voie;début;fin;côté`).
+- [ ] **L5 — Distribuer**. Distribué / anomalie + motif en 2 taps, rue entière. « Reprendre » : prochaine adresse non traitée dans l'ordre de la tournée. Gros boutons à une main.
+- [ ] **L6 — Contrôler**. Synthèse (distribuées, restantes, anomalies par motif et par rue), liste des non traitées, clôture de la tournée, rapport CSV / JSON.
+- [ ] **L7 — Robustesse**. Export/import v2, migration depuis la v0.1, tests des 3 vues, revue RGPD (motifs, rapport agrégé).
+- [ ] **L8 — Déploiement de la branche** (canal à décider, accord explicite).
+
+**À valider par l'utilisateur** :
+- statuts et liste des motifs (proposition : boîte absente, boîte inaccessible, boîte pleine ou abîmée, numéro introuvable, destinataire inconnu, autre) ;
+- nom de l'app (sans marque La Poste) ;
+- canal de déploiement de la branche.
 
 ---
 
@@ -245,7 +309,8 @@ neyron-tournees/
 │   ├── manifest.webmanifest
 │   ├── sw.js
 │   ├── css/app.css
-│   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js
+│   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js,
+│   │                     #   tabs.js, views/ (prepare.js, control.js, common.js) — branche facteur
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne),
@@ -539,8 +604,33 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 
 ## 12. Roadmap après la v0.1
 
+**Décidé le 19/10/2026 (priorité sur la liste numérotée ci-dessous)** :
+
+A. **Mode préparation de tournée** (repris et précisé par le plan de branche §2 bis, le 20/10/2026 : tournées composées à la main d'abord, **itinéraire calculé reporté**, proposé ensuite comme optimisation). L'utilisateur crée lui-même ses tournées dans l'app, sur **toute la commune** de Neyron.
+   - **Toute la commune** :
+     - le pipeline traite toutes les voies et toutes les adresses `entrée` (~940), avec un cadre sur la commune entière ;
+     - les 10 rues actuelles deviennent une tournée parmi d'autres (à recréer ou importer) ;
+     - conséquences : plus de couleur par rue (trop de voies), couleurs par sélection et statut ; recherche d'adresse ou de rue à la place de la longue légende ; tests à adapter (229 codé en dur, `EXPECTED_COUNTS`).
+   - **Créer une tournée** : nom, sélection des numéros (tap, rue entière, côté pair / impair, éventuellement lasso), archivage. Ça s'appuie sur le store `tours` et le champ `tour` des événements, prévus dès la v0.1. La progression est suivie par tournée.
+   - **Itinéraire le plus court**. Dijkstra seul ne suffit pas : visiter N adresses choisies dans le meilleur ordre est un **problème du voyageur de commerce**.
+     - Distances réelles à pied : Dijkstra ou A* sur un **graphe piéton**, depuis chaque adresse sélectionnée (matrice N × N).
+     - Ordre de visite : exact (Held-Karp) jusqu'à ~12 points, sinon plus proche voisin puis 2-opt / Or-opt (quelques ms en JS pour 200 points).
+     - Options : départ = position GPS ou adresse choisie ; boucle ou chemin ouvert.
+     - Porte-à-porte : pénalité de traversée (un côté puis l'autre sur la Route de Genève, zigzag dans les petites rues).
+     - Affichage : tracé, numéro d'ordre sur chaque adresse, distance et durée estimées, « prochaine adresse ».
+   - **Graphe piéton** à construire par le pipeline : aujourd'hui on n'a que des tracés approchés, pas de réseau. Deux sources possibles :
+     - **OSM** : sentiers, escaliers, passages, utiles pour les « montées » ; licence ODbL, avec la mention « © les contributeurs OpenStreetMap » obligatoire dans l'app ;
+     - **BD TOPO IGN** : Licence Ouverte, tronçons de voirie.
+     - **À décider en début de session.**
+   - Tout le calcul se fait **sur l'appareil** (graphe embarqué, aucun service de routage externe) : cohérent avec §9, aucune position n'est envoyée.
+B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
+   - Multi-cartes : données par carte (`docs/data/<carte>/`), sélecteur de carte, ajustement affine propre à chaque carte.
+   - Les identifiants BAN commencent par le code INSEE : pas de collision dans le journal.
+   - Lyon est publié **par arrondissement** : 3e = INSEE **69383**, BAN du département 69, cadastre de la commune 69383 (à vérifier au téléchargement).
+   - Milieu dense : immeubles, plusieurs adresses par bâtiment, `type_position` variés. Emprise limitée autour de la gare. Précache plus lourd.
+
 1. **v0.2 — Confort de tournée**
-   - Nouvelle tournée avec archivage.
+   - Nouvelle tournée avec archivage (→ intégré au point A).
    - Actions groupées par côté (pairs / impairs) et par tronçon (Route de Genève : 105 numéros).
    - Filtre « reste à faire ».
    - **Recherche d'une adresse** (« 12 Rue de la Gare ») avec zoom dessus.
@@ -606,3 +696,6 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   - ruleset sur `main`.
 
   Le serveur de dev (`http.server` sur toutes les interfaces, journal des requêtes en local) a été arrêté. Tests rendus lançables contre le site en ligne (`BASE_URL`).
+- **19/10/2026** — Carte de Cottance abandonnée : pas nécessaire pour valider le GPS. Prochaine session : mode préparation de tournée sur toute la commune, avec itinéraire le plus court (§12 A). Plus tard : carte de Lyon 3e autour de la gare Part-Dieu (§12 B).
+- **20/10/2026** — Branche `dev_tracking_tournee_laposte` : l'app évolue vers la distribution du courrier (préparer / distribuer / contrôler), avec une barre d'onglets en bas, sobre. Pas d'itinéraire calculé pour l'instant. Plan et limites d'architecture en §2 bis. Plan validé par l'utilisateur.
+- **20/10/2026** — L1 : vues Préparer et Contrôler posées par-dessus la carte plutôt que de la masquer. Avec `display: none`, la carte aurait une taille nulle (cadrages faux, suivi GPS cassé), et Préparer réutilisera la carte pour la sélection (L3). Distribuer est l'onglet par défaut.

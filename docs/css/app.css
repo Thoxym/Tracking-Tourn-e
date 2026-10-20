@@ -32,6 +32,8 @@
   --safe-l: env(safe-area-inset-left, 0px);
   --gap: 10px;
   --tap: 44px;
+  --tabbar: 56px;                                    /* barre d'onglets, hors zone du geste d'accueil */
+  --bottom-ui: calc(var(--tabbar) + var(--safe-b));  /* tout ce qui est ancré en bas se place au-dessus */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -227,7 +229,7 @@ button { font: inherit; color: inherit; }
 
 #map {
   position: absolute;
-  inset: 0;
+  inset: 0 0 var(--bottom-ui) 0;
   background: var(--map-bg);
   touch-action: none;
   overscroll-behavior: none;
@@ -370,7 +372,7 @@ button { font: inherit; color: inherit; }
   top: calc(var(--safe-t) + var(--gap) + var(--tap) + 8px);
   left: calc(var(--safe-l) + var(--gap));
   width: min(360px, calc(100vw - var(--safe-l) - var(--safe-r) - 2 * var(--gap)));
-  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--tap) - 3 * var(--gap) - 8px);
+  max-height: calc(100dvh - var(--safe-t) - var(--bottom-ui) - var(--tap) - 3 * var(--gap) - 8px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -456,7 +458,7 @@ button { font: inherit; color: inherit; }
   position: absolute;
   z-index: 15;
   right: calc(var(--safe-r) + var(--gap));
-  bottom: calc(var(--safe-b) + var(--gap) + 8px);
+  bottom: calc(var(--bottom-ui) + var(--gap));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -466,7 +468,7 @@ button { font: inherit; color: inherit; }
   position: absolute;
   z-index: 15;
   left: calc(var(--safe-l) + var(--gap) + 2px);
-  bottom: calc(var(--safe-b) + var(--gap) + 8px + var(--nearby-h, 0px));
+  bottom: calc(var(--bottom-ui) + var(--gap) + var(--nearby-h, 0px));
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -483,7 +485,7 @@ button { font: inherit; color: inherit; }
   z-index: 30;
   left: calc(var(--safe-l) + 8px);
   right: calc(var(--safe-r) + 8px);
-  bottom: calc(var(--safe-b) + 8px);
+  bottom: calc(var(--bottom-ui) + 8px);
   max-width: 520px;
   margin: 0 auto;
   padding: 12px 12px 14px 16px;
@@ -672,7 +674,7 @@ button { font: inherit; color: inherit; }
   z-index: 15;
   left: calc(var(--safe-l) + 8px);
   right: calc(var(--safe-r) + var(--gap) + var(--tap) + 8px);
-  bottom: calc(var(--safe-b) + 8px);
+  bottom: calc(var(--bottom-ui) + 8px);
   max-width: 440px;
   padding: 6px 4px 4px 12px;
 }
@@ -730,8 +732,111 @@ button { font: inherit; color: inherit; }
 }
 .nb-done:active { transform: scale(0.96); }
 
+/* --------------------------------------------------- onglets et vues */
+
+.tabbar {
+  position: absolute;
+  z-index: 22;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--bottom-ui);
+  padding: 0 var(--safe-r) var(--safe-b) var(--safe-l);
+  display: flex;
+  justify-content: center;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.tab {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 1 1 0;
+  max-width: 220px;  /* grand écran : onglets groupés au centre */
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tab .ico { width: 24px; height: 24px; }
+.tab[aria-current="page"] { color: var(--accent); }
+.tab[aria-current="page"] .ico { stroke-width: 2.4; }
+.tab:active { background: var(--surface-2); }
+
+/* hors de l'onglet Distribuer : la carte reste en place (taille, GPS) mais ses commandes disparaissent */
+#app:not([data-tab="distribute"]) :is(#legend, #sheet, #nearby, .mapctl, #scalebar) { visibility: hidden; }
+
+.view {
+  position: absolute;
+  z-index: 18;  /* au-dessus de la carte et de ses commandes, sous la barre du haut */
+  inset: 0 0 var(--bottom-ui) 0;
+  padding-top: calc(var(--safe-t) + var(--gap) + var(--tap) + 8px);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+.view-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 4px calc(var(--safe-r) + 12px) 24px calc(var(--safe-l) + 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+}
+.view-sec { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.view-sec h3 { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.view-note { margin: 0; padding: 0 4px; font-size: 13px; color: var(--text-2); }
+.btn.wide { width: 100%; }
+
+.vlist { list-style: none; margin: 0 -14px -12px; padding: 0; }
+.vrow {
+  appearance: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 6px 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.vrow:active { background: var(--surface-2); }
+.vrow::before { content: ""; width: 5px; align-self: stretch; border-radius: 3px; background: var(--sc); flex: none; }
+.vrow-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.vrow-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vrow-sub { font-size: 13px; color: var(--text-2); }
+.vrow-count { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; flex: none; }
+.vrow.complete .vrow-count { color: var(--fait); }
+.vrow-again { color: var(--repasser); font-weight: 700; margin-left: 6px; }
+.vrow-chev { width: 18px; height: 18px; color: var(--text-2); }
+
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+.stat { background: var(--surface-2); border-radius: 12px; padding: 10px 8px; display: flex; flex-direction: column; align-items: center; }
+.stat-n { font-size: 28px; font-weight: 750; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat-l { font-size: 13px; color: var(--text-2); }
+.stat-done .stat-n { color: var(--fait); }
+.stat-again .stat-n { color: var(--repasser); }
+.progress { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.progress > span { display: block; height: 100%; width: 0; background: var(--fait); border-radius: 4px; transition: width 0.25s; }
+
 /* ---------------------------------------------------------- grand écran */
 
 @media (min-width: 900px) {
   .legend { width: 340px; }
+  /* légende ancrée à gauche : l'encart GPS et l'échelle se placent à sa droite */
+  #app:has(#legend:not([hidden])) :is(.nearby, .scalebar) { left: calc(var(--safe-l) + 2 * var(--gap) + 340px); }
 }

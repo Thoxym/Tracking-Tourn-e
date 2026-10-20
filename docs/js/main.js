@@ -6,7 +6,10 @@ import { BackupController } from './io.js';
 import { MapView } from './map.js';
 import { registerServiceWorker } from './pwa.js';
 import { Store } from './store.js';
+import { TabBar } from './tabs.js';
 import { UI } from './ui.js';
+import { ControlView } from './views/control.js';
+import { PrepareView } from './views/prepare.js';
 import { WakeLockController } from './wakelock.js';
 
 async function loadJSON(url) {
@@ -30,7 +33,10 @@ async function start() {
     gps.wake = wake;
     const backup = new BackupController({ ui, store, map });
     const versions = { app: null, data: data.version };
-    const app = { map, ui, data, store, gps, wake, backup, versions };
+    const tabs = new TabBar({ ui });
+    const app = { map, ui, data, store, gps, wake, backup, versions, tabs };
+    app.prepare = new PrepareView(app);
+    app.control = new ControlView(app);
     app.debug = new DebugPanel(app);
     window.neyronApp = app;  // accès pour les tests
     splash.hidden = true;
