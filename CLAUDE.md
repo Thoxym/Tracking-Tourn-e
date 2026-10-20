@@ -287,7 +287,29 @@ npx playwright test                                 # tests (serveur lancé par 
   - **Rendu** : anomalie = pastille **rouge** (`--anomalie`) à chiffres penchés, point **carré** en vue d'ensemble, bâtiment rouge. Compteurs d'anomalies avec une icône SVG, et non le caractère ⚠ (emoji jaune sous Windows, §10).
   - **Contrôler** : 4 cases (distribuées, restantes, à repasser, anomalies), « n / N adresses traitées », rue « entière traitée », anomalies par rue. L'encart GPS ignore les adresses traitées.
   - Tests : `tests/distribuer.spec.js` (4 × 2 : anomalie et motifs depuis le panneau ; reprise complète d'une tournée de deux rues avec double toucher, Annuler, à repasser, anomalie, toute la rue, fin et relance ; panneau pendant la reprise ; comptes, encart GPS, toute la rue et import des motifs). Anciens tests adaptés aux nouveaux libellés. Sabotages détectés (protection du double toucher, motif non rétabli par Annuler). Suite : 99 réussis, 1 ignoré. Distribuer, pointage, GPS et navigation × 3 : 114/114, dont 1 réussi au second essai (blocage WebKit, §10).
-- [ ] **L6 — Contrôler**. Synthèse (distribuées, restantes, anomalies par motif et par rue), liste des non traitées, clôture de la tournée, rapport CSV / JSON.
+- [x] **L6 — Contrôler** ✅ (20/10/2026).
+  - **Synthèse** :
+    - 4 cases et la progression (déjà en L5) ; par rue, dans l'ordre de passage, avec les anomalies ;
+    - section repliable **Anomalies** : barres par motif (motifs présents, du plus fréquent au moins fréquent), puis la liste des adresses et leur motif ;
+    - section repliable **Non traitées** : à faire et à repasser, dans l'ordre de passage ;
+    - un toucher sur une ligne ouvre l'adresse sur la carte (panneau).
+  - **Rapport** (`js/report.js`, sans DOM) :
+    - une ligne par adresse de la tournée, dans l'ordre de passage : `rue;numero;complement;cote;statut;motif`, avec les statuts distribuée / anomalie / à repasser / non traitée ;
+    - **CSV** pour Excel en français : `;`, BOM UTF-8, CRLF. Les cellules sont protégées contre l'injection de formule (`'` devant = + - @) et les guillemets ;
+    - **JSON** : `{kind: 'rapport', tournee, date, totaux, anomalies_par_motif, rues[], adresses[]}` ;
+    - **sans heure par défaut** (RGPD : les heures retracent l'activité de la personne). Une case « Inclure les heures de pointage » (préférence d'appareil, `neyron-tournees.report-hours`) ajoute la colonne `heure` (dernier changement) et `passage.debut/fin` ;
+    - nom du fichier : `rapport-<tournée>-AAAAMMJJ.csv|json` ;
+    - envoi par la feuille de partage, sinon téléchargement (`io.shareFile`, commun avec la sauvegarde) ;
+    - un rapport importé comme sauvegarde est refusé avec un message clair.
+  - **Clôture du passage** :
+    - une tournée se refait chaque jour : clôturer pose une **borne** dans le journal (`tour.closures[].at`) et la tournée repart à zéro. Rien n'est effacé ; seuls les événements postérieurs comptent (`store.passageStart`, `derive(tourId, from, to)`) ;
+    - l'historique garde un **bilan agrégé** par passage (`{at, start, n, done, again, todo, anomalies: {motif: n}}`), sans détail par adresse ;
+    - la confirmation rappelle le nombre de non traitées et invite à exporter le rapport avant. Juste après, le toast propose « Rapport CSV » du passage clôturé ;
+    - le dernier passage peut être **rouvert** tant que rien n'a été pointé depuis ;
+    - les actions du passage clos ne s'annulent plus ; la reprise guidée s'arrête ;
+    - si l'horloge du téléphone recule, un nouvel événement est daté juste après la borne (sinon il serait invisible) ;
+    - import : `validTour` valide les passages (comptes ≥ 0, début < fin, motifs de la liste) et les trie.
+  - Tests : `tests/controler.spec.js` (4 × 2 : synthèse et listes ; rapports CSV / JSON, heures, partage, injection, refus à l'import ; clôture, historique, rapport du passage clos, réouverture, relance ; horloge qui recule et passages importés). Sabotages détectés (borne ignorée, garde anti-formule retirée). Suite : 106 réussis, 1 ignoré, 1 réussi au second essai (le test cliquait le toast après ses 8 s : corrigé) ; contrôler × 5 : 40/40 ; contrôler, sauvegarde, distribuer et navigation × 3 : 108/108.
 - [ ] **L7 — Robustesse**. Export/import v2, migration depuis la v0.1, tests des 3 vues, revue RGPD (motifs, rapport agrégé).
 - [ ] **L8 — Déploiement de la branche** (canal à décider, accord explicite).
 
@@ -400,11 +422,11 @@ neyron-tournees/
 │   ├── sw.js
 │   ├── css/app.css
 │   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js,
-│   │                     #   tabs.js, tourplan.js, views/ (prepare.js, distribute.js, control.js, common.js) — branche facteur
+│   │                     #   tabs.js, tourplan.js, report.js, views/ (prepare.js, distribute.js, control.js, common.js) — branche facteur
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
-                          #   branche facteur : navigation, tournees, preparer, distribuer),
+                          #   branche facteur : navigation, tournees, preparer, distribuer, controler),
                           #   helpers.js (outils communs), serve.py (serveur statique des tests)
 ```
 
@@ -532,7 +554,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 ### 8.2 Stockage (`store.js`)
 - IndexedDB, base **`neyron-tournees`**, trois stores :
   - `events` : `{dev, seq, t, tour, ids[], st, grp, undoOf?}`, clé `[dev, seq]`, `st` ∈ `"fait" | "a_repasser" | "a_faire"` (branche facteur : plus `"anomalie"` avec `why`, motif codé, §2 bis L5) ;
-  - `tours` : `{id, name, createdAt, archived}` (branche facteur : plus `updatedAt`, `ids[]`, `order[]`, `reverse[]`, §2 bis) ;
+  - `tours` : `{id, name, createdAt, archived}` (branche facteur : plus `updatedAt`, `ids[]`, `order[]`, `reverse[]`, `closures[]`, §2 bis) ;
   - `meta` : `deviceId`, compteur `seq`, version des données, préférences.
 - **L'état courant est dérivé du journal** : pour chaque `id`, le dernier événement de la tournée active l'emporte, ordre `(t, dev, seq)` (départage déterministe entre appareils).
 - **Groupes et annulation** : chaque action utilisateur a un `grp` unique. Une action groupée dont les états précédents diffèrent (ex. « Toute la rue faite » alors que certains étaient « à repasser ») est annulée par **plusieurs événements** (un par état précédent), tous avec `undoOf: <grp annulé>`. La pile d'annulation est dérivée du journal (dernières actions de l'appareil non annulées) : elle survit à une relance. **On n'efface jamais rien du journal.**
@@ -830,3 +852,7 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - « Fait » devient « Distribué » dans l'interface. Le statut interne reste `fait`, ce qui garde les données et exports compatibles.
   - Reprise guidée : carte « prochaine adresse » dans un dock en bas d'écran (zone du pouce), qui avance seule. Protection de 500 ms contre le double toucher, comme l'encart GPS, figé pendant l'appui. Reprise mémorisée d'une relance à l'autre.
   - Choix du motif dans un `<dialog>` en bas d'écran (focus sur Annuler), partagé par le panneau d'adresse et la reprise.
+- **20/10/2026** — Commit `d7eeb24` (L5). L6 : contrôler.
+  - Clôturer = fin du **passage**, pas de la tournée : un facteur refait la même tournée chaque jour. Borne dans le journal plutôt qu'effacement ou duplication de tournée ; dernier passage réouvrable.
+  - Historique **agrégé** seulement. Le détail par adresse sort par le rapport, à exporter avant ou juste après la clôture (toast).
+  - Rapport sans heures par défaut (RGPD), heures en option. CSV protégé contre l'injection de formule.

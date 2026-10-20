@@ -255,6 +255,7 @@
       <div class="view-body">
         <div class="view-sec">
           <h2 id="ctl-title">Bilan de la tournée</h2>
+          <p id="ctl-passage" class="muted"></p>
           <div class="stats">
             <div class="stat stat-done"><span id="ctl-done" class="stat-n">0</span><span class="stat-l">distribuées</span></div>
             <div class="stat"><span id="ctl-todo" class="stat-n">0</span><span class="stat-l">restantes</span></div>
@@ -270,10 +271,40 @@
           <ul id="ctl-streets" class="vlist"></ul>
           <p id="ctl-empty" class="list-empty" hidden>Tournée vide : composez-la dans l'onglet Préparer.</p>
         </div>
-        <button id="ctl-export" class="btn primary wide" type="button">
-          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Exporter la progression
+        <details id="ctl-anom-box" class="view-sec fold">
+          <summary><h3>Anomalies</h3><span id="ctl-anom-n" class="fold-n"></span></summary>
+          <ul id="ctl-reasons" class="rbars"></ul>
+          <ul id="ctl-anom-list" class="vlist"></ul>
+          <p id="ctl-anom-none" class="check-none">Aucune anomalie signalée dans ce passage.</p>
+        </details>
+        <details id="ctl-untreated-box" class="view-sec fold">
+          <summary><h3>Non traitées</h3><span id="ctl-untreated-n" class="fold-n"></span></summary>
+          <ul id="ctl-untreated-list" class="vlist"></ul>
+          <p id="ctl-untreated-none" class="check-none">Toutes les adresses de la tournée sont traitées.</p>
+        </details>
+        <div class="view-sec">
+          <h3>Rapport</h3>
+          <p class="view-note">Une ligne par adresse de la tournée : rue, numéro, côté, statut, motif d'anomalie. Sans heure, sauf si vous cochez la case.</p>
+          <label class="check"><input id="ctl-hours" type="checkbox"> Inclure les heures de pointage</label>
+          <div class="btn-row">
+            <button id="ctl-csv" class="btn primary" type="button">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Rapport CSV
+            </button>
+            <button id="ctl-json" class="btn" type="button">Rapport JSON</button>
+          </div>
+        </div>
+        <div class="view-sec">
+          <h3>Clôture</h3>
+          <p class="view-note">Termine le passage : le bilan est gardé dans l'historique et la tournée repart à zéro pour le prochain passage. Rien n'est effacé du journal.</p>
+          <button id="ctl-close" class="btn wide danger" type="button">Clôturer le passage</button>
+          <details id="ctl-history" class="archived" hidden>
+            <summary>Passages clôturés (<span id="ctl-history-n">0</span>)</summary>
+            <ul id="ctl-history-list" class="vlist"></ul>
+          </details>
+        </div>
+        <button id="ctl-export" class="btn wide" type="button">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Sauvegarder la progression
         </button>
-        <p class="view-note">Bientôt : anomalies par motif, liste des adresses non traitées, clôture de tournée et rapport CSV.</p>
       </div>
     </section>
 

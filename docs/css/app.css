@@ -956,6 +956,19 @@ button { font: inherit; color: inherit; }
 .check-group .vlist { margin: 0 -14px; }
 .check-group .btn { margin-top: 8px; }
 
+/* contrôle : anomalies par motif, rapport, clôture, historique */
+.rbars { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rbar { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 15px; }
+.rbar-n { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--anomalie); }
+.rbar-track { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.rbar-track > span { display: block; height: 100%; background: var(--anomalie); border-radius: 3px; }
+#ctl-anom-list, #ctl-untreated-list { margin-bottom: -12px; }
+.check { display: flex; align-items: center; gap: 10px; min-height: var(--tap); font-size: 15px; cursor: pointer; }
+.check input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
+.btn.danger { color: var(--anomalie); border-color: var(--anomalie); background: var(--surface); margin-top: 10px; }
+.hist-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 6px 12px 6px 14px; border-top: 1px solid var(--border); }
+.hist-row .btn { height: 40px; flex: none; }
+
 /* composition sur la carte */
 .select-bar {
   position: absolute;

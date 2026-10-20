@@ -38,7 +38,7 @@ async function start() {
     const app = { map, ui, data, store, gps, wake, backup, versions, tabs };
     app.prepare = new PrepareView(app);
     app.distribute = new DistributeView(app);
-    app.control = new ControlView(app);
+    app.control = new ControlView(app);  // après la reprise : la clôture l'arrête
     app.debug = new DebugPanel(app);
     window.neyronApp = app;  // accès pour les tests
     splash.hidden = true;

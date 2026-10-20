@@ -2,13 +2,15 @@
 // L'état courant est dérivé du journal ; rien n'est jamais effacé : « Annuler » ajoute des événements.
 //
 // events : {dev, seq, t, tour, ids[], st, why?, grp, undoOf?}  clé [dev, seq] ; why = motif d'une anomalie
-// tours  : {id, name, createdAt, updatedAt, archived, ids[], order?, reverse?}
+// tours  : {id, name, createdAt, updatedAt, archived, ids[], order?, reverse?, closures?}
 //          ids = composition (adresses de la tournée) ; order / reverse = ordre de passage et rues parcourues
-//          en numéros décroissants, par clé de voie BAN (tourplan.js)
+//          en numéros décroissants, par clé de voie BAN (tourplan.js) ; closures = passages clôturés
+//          [{at, start, n, done, again, todo, anomalies: {motif: n}}] (bilan agrégé, sans détail par adresse)
 // meta   : {key, value}  deviceId, seq, activeTour, dataVersion, persistAsked, persist
 //
 // La progression est propre à chaque tournée (champ `tour` des événements). Changer la composition
-// n'efface rien : une adresse retirée puis remise retrouve son statut.
+// n'efface rien : une adresse retirée puis remise retrouve son statut. Clôturer un passage pose une borne
+// (closures[].at) : seuls les événements postérieurs comptent pour le passage en cours, le journal reste entier.
 
 const DB_NAME = 'neyron-tournees';
 const DB_VERSION = 1;
@@ -158,7 +160,8 @@ export class Store {
   }
 
   _reload() {
-    this.events = this.allEvents.filter((e) => e.tour === this.tour).sort(compareEvents);
+    const start = this.passageStart();
+    this.events = this.allEvents.filter((e) => e.tour === this.tour && e.t > start).sort(compareEvents);
     this.state = new Map();
     this.reasons = new Map();
     for (const e of this.events) applyEvent(this.state, this.reasons, e);
@@ -178,13 +181,65 @@ export class Store {
     return this.tours.filter((t) => t.archived).sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
-  // statuts d'une tournée quelconque (la tournée active a déjà les siens dans this.state)
+  // statuts du passage en cours d'une tournée quelconque (la tournée active a déjà les siens dans this.state)
   stateOf(tourId) {
-    if (tourId === this.tour) return this.state;
-    const st = new Map();
+    return tourId === this.tour ? this.state : this.derive(tourId).state;
+  }
+
+  // début du passage en cours : dernière clôture de la tournée (0 si elle n'a jamais été clôturée)
+  passageStart(tourId = this.tour) {
+    const c = this.tours.find((x) => x.id === tourId)?.closures;
+    return Array.isArray(c) && c.length ? c[c.length - 1].at : 0;
+  }
+
+  // statuts, motifs et heure du dernier changement de chaque adresse, d'après les événements de ]from, to]
+  derive(tourId, from = this.passageStart(tourId), to = Infinity) {
+    const state = new Map();
     const reasons = new Map();
-    for (const e of this.allEvents.filter((x) => x.tour === tourId).sort(compareEvents)) applyEvent(st, reasons, e);
-    return st;
+    const times = new Map();
+    for (const e of this.allEvents.filter((x) => x.tour === tourId && x.t > from && x.t <= to).sort(compareEvents)) {
+      applyEvent(state, reasons, e);
+      for (const id of e.ids) times.set(id, e.t);
+    }
+    return { state, reasons, times };
+  }
+
+  // Clôture du passage en cours de la tournée active (ids : ses adresses sur le plan). Rien n'est effacé :
+  // une borne dans le journal et un bilan agrégé dans l'historique ; la tournée repart à zéro.
+  async closePassage(ids) {
+    const t = this.activeTour;
+    const start = this.passageStart();
+    const at = this.events.reduce((m, e) => Math.max(m, e.t), Math.max(Date.now(), start + 1));
+    const entry = { at, start, n: ids.length, done: 0, again: 0, todo: 0, anomalies: {} };
+    for (const id of ids) {
+      const st = this.status(id);
+      if (st === ST_DONE) entry.done += 1;
+      else if (st === ST_ANOMALY) entry.anomalies[this.reason(id)] = (entry.anomalies[this.reason(id)] || 0) + 1;
+      else entry.todo += 1;  // non traitée : à faire ou à repasser
+      if (st === ST_AGAIN) entry.again += 1;
+    }
+    t.closures = [...(t.closures || []), entry];
+    t.updatedAt = Date.now();
+    await this._save({}, [t]);
+    this._reload();
+    this._emit({ type: 'tour', tour: t, change: ['closures'] });
+    return entry;
+  }
+
+  // le dernier passage clôturé peut être rouvert tant que rien n'a été pointé depuis
+  canReopen() {
+    return this.passageStart() > 0 && this.events.length === 0;
+  }
+
+  async reopenPassage() {
+    if (!this.canReopen()) return false;
+    const t = this.activeTour;
+    t.closures = t.closures.slice(0, -1);
+    t.updatedAt = Date.now();
+    await this._save({}, [t]);
+    this._reload();
+    this._emit({ type: 'tour', tour: t, change: ['closures'] });
+    return true;
   }
 
   // extra : ordre de passage d'un secteur importé ({order, reverse})
@@ -246,7 +301,7 @@ export class Store {
 
   // ajoute les événements d'une action (même grp, même heure) dans une seule transaction
   async _append(items, extra = {}) {
-    const t = Date.now();
+    const t = Math.max(Date.now(), this.passageStart() + 1);  // horloge revenue en arrière : rester dans le passage
     const evs = items.map(({ ids, st, why }) => {
       const e = { dev: this.deviceId, seq: ++this.seq, t, tour: this.tour, ids, st };
       if (st === ST_ANOMALY) e.why = why;
