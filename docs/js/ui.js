@@ -1,15 +1,17 @@
 // Interface autour du plan : légende et progression, pointage, annulation, barre d'échelle, thème,
 // panneau d'adresse, toasts, confirmations.
 
-import { ST_AGAIN, ST_DONE, ST_TODO } from './store.js';
+import { REASONS, ST_AGAIN, ST_ANOMALY, ST_DONE, ST_TODO, isTreated, reasonLabel } from './store.js';
 import { sequence, streetKeys, streetOrder } from './tourplan.js';
-import { fold } from './views/common.js';
+import { anomalyCount, fold, setAnomalyCount } from './views/common.js';
 
 const $ = (id) => document.getElementById(id);
 const THEME_KEY = 'neyron-tournees.theme';  // préférence par appareil (lue avant affichage par theme-init.js)
 const THEMES = ['auto', 'light', 'dark'];
 const THEME_LABELS = { auto: 'automatique', light: 'clair', dark: 'sombre' };
-export const STATUS_LABELS = { [ST_TODO]: 'à faire', [ST_DONE]: 'fait', [ST_AGAIN]: 'à repasser' };
+export const STATUS_LABELS = { [ST_TODO]: 'à faire', [ST_DONE]: 'distribué', [ST_AGAIN]: 'à repasser', [ST_ANOMALY]: 'anomalie' };
+// « distribué », « anomalie (boîte absente) »
+export const statusText = (st, why) => (st === ST_ANOMALY ? `anomalie (${reasonLabel(why).toLowerCase()})` : STATUS_LABELS[st]);
 const desktop = window.matchMedia('(min-width: 900px)');
 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -42,6 +44,7 @@ export class UI {
     this.order = [];  // rues de la tournée active dans l'ordre de passage
     this.sheetListeners = [];
     this.tapOverride = null;  // composition sur la carte (Préparer) : le tap ajoute / retire au lieu de pointer
+    this.guided = false;      // reprise de la tournée (Distribuer) : l'encart GPS laisse la place à la carte « prochaine »
     this._buildLegend();
     this._applyTour();
     this._initTheme();
@@ -81,53 +84,67 @@ export class UI {
   refresh() {
     const status = (id) => this.store.status(id);
     this.map.applyStatuses(status);
-    let done = 0;
+    let treated = 0;
     let total = 0;
     this.byStreet.forEach((addrs, i) => {
       const n = addrs.length;
       const d = addrs.filter((a) => status(a.id) === ST_DONE).length;
       const again = addrs.filter((a) => status(a.id) === ST_AGAIN).length;
-      done += d;
+      const anom = addrs.filter((a) => status(a.id) === ST_ANOMALY).length;
+      treated += d + anom;
       total += n;
       const row = this.legendRows[i];
       row.querySelector('.lg-count').firstChild.textContent = `${d}/${n}`;
       const ag = row.querySelector('.lg-again');
       ag.textContent = again ? `${again} ↻` : '';
       ag.title = again ? `${again} à repasser` : '';
+      setAnomalyCount(row.querySelector('.lg-anom'), anom);
       row.querySelector('.lg-bar > span').style.width = `${n ? (100 * d) / n : 0}%`;
-      row.classList.toggle('complete', n > 0 && d === n);
-      row.querySelector('.lg-all').disabled = d === n;
+      row.classList.toggle('complete', n > 0 && d + anom === n);  // rue entièrement traitée
+      row.querySelector('.lg-all').disabled = d + anom === n;
     });
-    $('total-progress').textContent = `${done}/${total}`;
+    $('total-progress').textContent = `${treated}/${total}`;
     $('btn-undo').disabled = !this.store.canUndo();
     if (this.sheetAddress) this._fillSheet(this.sheetAddress);
   }
 
-  async setStatus(ids, st) {
+  async setStatus(ids, st, why = null) {
     try {
-      return await this.store.setStatus(ids, st);
+      return await this.store.setStatus(ids, st, why);
     } catch (err) {
       this.toast(`Enregistrement impossible : ${err.message}`, { ms: 6000 });
       return null;
     }
   }
 
-  async markAddress(a, st) {
-    const action = await this.setStatus([a.id], st);
+  async markAddress(a, st, why = null) {
+    const action = await this.setStatus([a.id], st, why);
     this.closeSheet();
-    if (action) this.toast(`${addressLabel(a, this.streets)} : ${STATUS_LABELS[st]}`, { undo: true });
+    if (action) this.toast(`${addressLabel(a, this.streets)} : ${statusText(st, why)}`, { undo: true });
+    return action;
   }
 
+  // anomalie : motif choisi dans la liste fermée (un toucher), puis enregistrée
+  async markAnomaly(a) {
+    const why = await this.pickReason(a);
+    return why ? this.markAddress(a, ST_ANOMALY, why) : null;
+  }
+
+  // numéros restants de la rue (à faire, à repasser) distribués ; les anomalies restent
   async markStreet(i) {
-    const todo = this.byStreet[i].filter((a) => this.store.status(a.id) !== ST_DONE);
-    if (!todo.length) return;
-    const again = todo.filter((a) => this.store.status(a.id) === ST_AGAIN).length;
+    const left = this.byStreet[i].filter((a) => !isTreated(this.store.status(a.id)));
+    if (!left.length) return null;
+    const again = left.filter((a) => this.store.status(a.id) === ST_AGAIN).length;
+    const anom = this.byStreet[i].filter((a) => this.store.status(a.id) === ST_ANOMALY).length;
     const name = this.streets[i].name;
-    const msg = `Marquer ${todo.length === 1 ? 'le numéro restant' : `les ${todo.length} numéros restants`} de « ${name} » comme faits ?`
-      + (again ? ` (dont ${again} à repasser)` : '');
-    if (!(await this.confirm(msg, 'Toute la rue faite'))) return;
-    const action = await this.setStatus(todo.map((a) => a.id), ST_DONE);
-    if (action) this.toast(`${name} : ${action.ids.length} numéro${action.ids.length > 1 ? 's' : ''} fait${action.ids.length > 1 ? 's' : ''}`, { undo: true });
+    const msg = `Marquer ${left.length === 1 ? 'le numéro restant' : `les ${left.length} numéros restants`} de « ${name} » comme distribués ?`
+      + (again ? ` (dont ${again} à repasser)` : '')
+      + (anom ? ` ${anom === 1 ? 'L\'anomalie signalée est conservée' : `Les ${anom} anomalies signalées sont conservées`}.` : '');
+    if (!(await this.confirm(msg, 'Toute la rue distribuée'))) return null;
+    const action = await this.setStatus(left.map((a) => a.id), ST_DONE);
+    const k = action ? action.ids.length : 0;
+    if (action) this.toast(`${name} : ${k} numéro${k > 1 ? 's' : ''} distribué${k > 1 ? 's' : ''}`, { undo: true });
+    return action;
   }
 
   describe(action) {
@@ -135,7 +152,7 @@ export class UI {
     const what = addrs.length === 1
       ? addressLabel(addrs[0], this.streets)
       : `${[...new Set(addrs.map((a) => this.streets[a.s].name))].join(', ')}, ${addrs.length} numéros`;
-    return `${what} (${STATUS_LABELS[action.st]})`;
+    return `${what} (${statusText(action.st, action.why)})`;
   }
 
   async undo() {
@@ -226,7 +243,7 @@ export class UI {
       count.append(document.createTextNode(''));
       const again = document.createElement('span');
       again.className = 'lg-again';
-      count.append(again);
+      count.append(again, anomalyCount('lg-anom'));
 
       const bar = document.createElement('div');
       bar.className = 'lg-bar';
@@ -235,8 +252,8 @@ export class UI {
       const all = document.createElement('button');
       all.type = 'button';
       all.className = 'lg-all';
-      all.title = 'Toute la rue faite';
-      all.setAttribute('aria-label', `Toute la rue faite : ${st.name}`);
+      all.title = 'Toute la rue distribuée';
+      all.setAttribute('aria-label', `Toute la rue distribuée : ${st.name}`);
       all.append(icon(['M2 12.5l4.5 4.5L16 7.5', 'M9 16.5l.5.5L19 7.5']));
       all.addEventListener('click', () => this.markStreet(i));
 
@@ -276,15 +293,16 @@ export class UI {
     this.updatePadding();
   }
 
-  // zones couvertes par l'interface, pour que les cadrages ne passent pas dessous
+  // zones couvertes par l'interface, pour que les cadrages ne passent pas dessous. Le dock (en bas à gauche)
+  // empile « Reprendre », l'encart GPS et la carte « prochaine adresse »
   updatePadding() {
     const r = this.map.container.getBoundingClientRect();
     const top = $('btn-legend').getBoundingClientRect().bottom - r.top;
     const legend = $('legend');
     const left = desktop.matches && !legend.hidden ? legend.getBoundingClientRect().right - r.left : 0;
-    const nearby = $('nearby');
-    const bottom = nearby.hidden ? 0 : r.bottom - nearby.getBoundingClientRect().top;
-    document.getElementById('app').style.setProperty('--nearby-h', `${Math.max(0, bottom)}px`);
+    const dock = $('dock');
+    const bottom = dock.offsetHeight ? r.bottom - dock.getBoundingClientRect().top : 0;
+    document.getElementById('app').style.setProperty('--dock-h', `${Math.max(0, bottom)}px`);
     this.map.setPadding({ top, left, right: 0, bottom });
   }
 
@@ -330,8 +348,14 @@ export class UI {
     });
     $('btn-sheet-close').addEventListener('click', () => this.closeSheet());
     for (const b of $('sheet-actions').querySelectorAll('.act')) {
-      b.addEventListener('click', () => this.sheetAddress && this.markAddress(this.sheetAddress, b.dataset.st));
+      b.addEventListener('click', () => {
+        const a = this.sheetAddress;
+        if (!a) return;
+        if (b.dataset.st === ST_ANOMALY) this.markAnomaly(a);
+        else this.markAddress(a, b.dataset.st);
+      });
     }
+    this._buildReasons();
     $('toast-action').addEventListener('click', () => {
       $('toast').hidden = true;
       const action = this._toastAction;
@@ -345,7 +369,7 @@ export class UI {
         this.undo();
         return;
       }
-      if (e.key !== 'Escape' || $('confirm').open) return;
+      if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;  // un dialogue gère Échap lui-même
       if (!$('menu').hidden) this.setMenuOpen(false);
       else if (!$('sheet').hidden) this.closeSheet();
       else if (!$('legend').hidden && !desktop.matches) this.setLegendOpen(false);
@@ -386,10 +410,39 @@ export class UI {
     $('sheet-title').textContent = addressLabel(a, this.streets);
     $('sheet-sub').textContent = [a.ld, `côté ${a.side}`].filter(Boolean).join(' · ');
     const badge = $('sheet-status');
-    badge.textContent = STATUS_LABELS[st];
+    badge.textContent = st === ST_ANOMALY ? `anomalie : ${reasonLabel(this.store.reason(a.id)).toLowerCase()}` : STATUS_LABELS[st];
     badge.className = `badge st-${st}`;
-    // seules les actions qui changent le statut sont proposées
-    for (const b of $('sheet-actions').querySelectorAll('.act')) b.hidden = b.dataset.st === st;
+    // seules les actions qui changent le statut sont proposées (anomalie : toujours, pour changer de motif)
+    for (const b of $('sheet-actions').querySelectorAll('.act')) b.hidden = b.dataset.st === st && st !== ST_ANOMALY;
+  }
+
+  // ------------------------------------------------------ motif d'anomalie
+
+  _buildReasons() {
+    $('reason-list').replaceChildren(...REASONS.map(({ code, label }) => {
+      const b = document.createElement('button');
+      b.type = 'submit';
+      b.className = 'btn reason';
+      b.value = code;
+      b.textContent = label;
+      return b;
+    }));
+  }
+
+  // motif choisi (code) ou null si annulé ; le motif actuel est mis en avant
+  pickReason(a) {
+    const dlg = $('reason-dialog');
+    const current = this.store.status(a.id) === ST_ANOMALY ? this.store.reason(a.id) : null;
+    $('reason-title').textContent = `Anomalie · ${addressLabel(a, this.streets)}`;
+    for (const b of $('reason-list').querySelectorAll('.reason')) b.setAttribute('aria-pressed', String(b.value === current));
+    dlg.returnValue = '';
+    return new Promise((resolve) => {
+      dlg.addEventListener('close', () => {
+        const v = dlg.returnValue;
+        resolve(REASONS.some((r) => r.code === v) ? v : null);
+      }, { once: true });
+      dlg.showModal();
+    });
   }
 
   openSheet(a) {

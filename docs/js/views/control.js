@@ -1,7 +1,8 @@
-// Onglet Contrôler : bilan de la tournée (faites, restantes, à repasser, temps restant estimé), détail par rue
-// dans l'ordre de passage, export. À venir (L6) : motifs d'anomalie, adresses non traitées, clôture, rapport CSV.
+// Onglet Contrôler : bilan de la tournée (distribuées, restantes, à repasser, anomalies, temps restant estimé),
+// détail par rue dans l'ordre de passage, export. À venir (L6) : anomalies par motif, adresses non traitées,
+// clôture, rapport CSV.
 
-import { ST_AGAIN, ST_DONE } from '../store.js';
+import { ST_AGAIN, ST_ANOMALY, ST_DONE, isTreated } from '../store.js';
 import { formatDistance, formatDuration, workload, workloadSettings } from '../tourplan.js';
 import { showStreet, streetRow } from './common.js';
 
@@ -23,40 +24,47 @@ export class ControlView {
     $('ctl-title').textContent = `Bilan · ${store.activeTour.name}`;
     let done = 0;
     let again = 0;
+    let anom = 0;
     let total = 0;
     const rows = [];
     for (const i of ui.order) {  // rues de la tournée active, dans l'ordre de passage
       const addrs = ui.byStreet[i];
-      const d = addrs.filter((a) => store.status(a.id) === ST_DONE).length;
-      const ag = addrs.filter((a) => store.status(a.id) === ST_AGAIN).length;
+      const by = (st) => addrs.filter((a) => store.status(a.id) === st).length;
+      const d = by(ST_DONE);
+      const ag = by(ST_AGAIN);
+      const an = by(ST_ANOMALY);
       done += d;
       again += ag;
+      anom += an;
       total += addrs.length;
-      const left = addrs.length - d - ag;
+      const todo = addrs.length - d - ag - an;
       rows.push(streetRow({
         color: ui.streets[i].colors[dark ? 1 : 0],
         name: ui.streets[i].name,
-        sub: d === addrs.length ? 'rue entière faite' : `${left} restante${left > 1 ? 's' : ''}`,
+        sub: d + an === addrs.length ? 'rue entière traitée' : `${todo} restante${todo > 1 ? 's' : ''}`,
         count: `${d}/${addrs.length}`,
         again: ag,
-        complete: d === addrs.length,
+        anomalies: an,
+        complete: d + an === addrs.length,
         onClick: () => showStreet(this.app, i),
       }));
     }
     $('ctl-streets').replaceChildren(...rows);
     $('ctl-empty').hidden = rows.length > 0;
     $('ctl-done').textContent = String(done);
-    $('ctl-todo').textContent = String(total - done - again);
+    $('ctl-todo').textContent = String(total - done - again - anom);
     $('ctl-again').textContent = String(again);
-    const pct = total ? Math.round((100 * done) / total) : 0;
+    $('ctl-anom').textContent = String(anom);
+    const treated = done + anom;
+    const pct = total ? Math.round((100 * treated) / total) : 0;
     $('ctl-bar').style.width = `${pct}%`;
-    $('ctl-summary').textContent = `${done} / ${total} adresses faites · ${pct} %`;
-    // reste : adresses non faites (à repasser comprises), dans l'ordre de passage
-    const left = workload(ui.sequence().map((g) => ({ ...g, addrs: g.addrs.filter((a) => store.status(a.id) !== ST_DONE) })),
+    $('ctl-summary').textContent = `${treated} / ${total} adresses traitées · ${pct} %`;
+    // reste : adresses non traitées (à repasser comprises), dans l'ordre de passage
+    const left = workload(ui.sequence().map((g) => ({ ...g, addrs: g.addrs.filter((a) => !isTreated(store.status(a.id))) })),
       workloadSettings());
     $('ctl-left').hidden = !total;
     $('ctl-left').textContent = left.addresses
       ? `Reste ≈ ${formatDuration(left.seconds)} · ${formatDistance(left.meters)} (estimation)`
-      : 'Toutes les adresses sont faites.';
+      : 'Toutes les adresses sont traitées.';
   }
 }

@@ -166,7 +166,7 @@ export class MapView {
   }
 
   // statut de chaque adresse de la tournée ; un bâtiment est « à repasser » si l'une de ses adresses l'est,
-  // « fait » si toutes le sont
+  // sinon « anomalie » si l'une l'est, « fait » (distribué) si toutes le sont
   applyStatuses(statusOf) {
     for (const a of this.pointable) {
       const st = this.inScope(a) ? statusOf(a.id) : null;
@@ -174,18 +174,21 @@ export class MapView {
       for (const e of [num, dot]) {
         e.classList.toggle('st-fait', st === 'fait');
         e.classList.toggle('st-a_repasser', st === 'a_repasser');
+        e.classList.toggle('st-anomalie', st === 'anomalie');
       }
     }
     for (const { path, ids: all } of this.buildingEls.values()) {
       const ids = all.filter((id) => this.inScope(this.byId.get(id)));
       if (!ids.length) {
-        path.classList.remove('st-fait', 'st-a_repasser');
+        path.classList.remove('st-fait', 'st-a_repasser', 'st-anomalie');
         continue;
       }
       const sts = ids.map(statusOf);
-      const st = sts.includes('a_repasser') ? 'a_repasser' : sts.every((s) => s === 'fait') ? 'fait' : '';
+      const st = sts.includes('a_repasser') ? 'a_repasser' : sts.includes('anomalie') ? 'anomalie'
+        : sts.every((s) => s === 'fait') ? 'fait' : '';
       path.classList.toggle('st-fait', st === 'fait');
       path.classList.toggle('st-a_repasser', st === 'a_repasser');
+      path.classList.toggle('st-anomalie', st === 'anomalie');
     }
   }
 

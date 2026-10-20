@@ -1,7 +1,7 @@
 // Sauvegarde : export JSON de la progression (feuille de partage iOS, sinon téléchargement) et import
 // par fusion. Un fichier importé est une donnée non fiable : validé champ par champ, champs inconnus retirés.
 
-import { STATUSES } from './store.js';
+import { REASON_CODES, STATUSES, ST_ANOMALY } from './store.js';
 
 const $ = (id) => document.getElementById(id);
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -18,11 +18,13 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n > 1 ? many : one}`;
 
 export function validEvent(e) {
   if (!e || typeof e !== 'object') return null;
-  const { dev, seq, t, tour, ids, st, grp, undoOf } = e;
+  const { dev, seq, t, tour, ids, st, why, grp, undoOf } = e;
   if (!isStr(dev, 64) || !isSeq(seq) || !isTime(t) || !isStr(tour, 64) || !STATUSES.includes(st) || !isStr(grp, 140)) return null;
   if (!Array.isArray(ids) || !ids.length || ids.length > MAX_IDS || !ids.every((id) => isStr(id, 64))) return null;
   if (undoOf !== undefined && !isStr(undoOf, 140)) return null;
+  if (st === ST_ANOMALY && !REASON_CODES.includes(why)) return null;  // anomalie : motif de la liste fermée
   const out = { dev, seq, t, tour, ids: [...ids], st, grp };
+  if (st === ST_ANOMALY) out.why = why;
   if (undoOf !== undefined) out.undoOf = undoOf;
   return out;
 }

@@ -16,6 +16,7 @@
   --ctx: #9aa0a6;
   --fait: #1f9d55;
   --repasser: #e07b00;
+  --anomalie: #b3122a;
   --accent: #1d5fd1;
   --danger: #c22f25;
   --on-status: #ffffff;
@@ -80,6 +81,7 @@
   --ctx: #7d858f;
   --fait: #3ccf7f;
   --repasser: #ffa438;
+  --anomalie: #ff6b7a;
   --accent: #6ea2ff;
   --danger: #ff7a6e;
   --on-status: #10141a;
@@ -193,6 +195,7 @@ button { font: inherit; color: inherit; }
 .act { flex: 1 1 0; min-width: 0; padding: 0 10px; white-space: nowrap; }
 .act-fait { background: var(--fait); border-color: var(--fait); color: var(--on-status); flex-grow: 1.4; }
 .act-a_repasser { background: var(--repasser); border-color: var(--repasser); color: var(--on-status); }
+.act-anomalie { background: var(--anomalie); border-color: var(--anomalie); color: var(--on-status); }
 
 .badge {
   display: inline-block;
@@ -206,6 +209,7 @@ button { font: inherit; color: inherit; }
 }
 .badge.st-fait { background: var(--fait); color: var(--on-status); }
 .badge.st-a_repasser { background: var(--repasser); color: var(--on-status); }
+.badge.st-anomalie { background: var(--anomalie); color: var(--on-status); }
 .chip { font-weight: 600; padding: 0 12px 0 10px; }
 
 .pill {
@@ -271,6 +275,7 @@ button { font: inherit; color: inherit; }
 }
 .bld.st-fait { fill: var(--bld); fill-opacity: 1; stroke: var(--fait); stroke-opacity: 1; stroke-width: 1.4px; }  /* estompé : revient au gris */
 .bld.st-a_repasser { fill: var(--repasser); stroke: var(--repasser); fill-opacity: 0.45; }
+.bld.st-anomalie { fill: var(--anomalie); stroke: var(--anomalie); fill-opacity: 0.4; }
 
 .slabel {
   fill: var(--sc);
@@ -295,6 +300,7 @@ button { font: inherit; color: inherit; }
 .dot.ctx { stroke: var(--ctx); stroke-width: 4px; }
 .dot.st-fait { stroke: var(--fait); stroke-width: 4.5px; opacity: 0.55; }
 .dot.st-a_repasser { stroke: var(--repasser); stroke-width: 11px; }
+.dot.st-anomalie { stroke: var(--anomalie); stroke-width: 10px; stroke-linecap: square; }  /* point carré */
 
 .num {
   fill: var(--sc);
@@ -312,6 +318,7 @@ button { font: inherit; color: inherit; }
 /* statuts distincts par la forme : les couleurs « fait » / « à repasser » sont proches de rues (Saules, Trois Glorieuses) */
 .num.st-fait { fill: var(--fait); opacity: 0.45; font-weight: 600; }
 .num.st-a_repasser { fill: var(--on-status); stroke: var(--repasser); stroke-width: 0.62em; }  /* pastille orange */
+.num.st-anomalie { fill: var(--on-status); stroke: var(--anomalie); stroke-width: 0.62em; font-style: italic; }  /* pastille rouge, chiffres penchés */
 
 /* hors de la tournée active : gris, non pointable ; rues sans adresse de la tournée atténuées */
 .num.out { fill: var(--ctx); font-weight: 500; }
@@ -467,6 +474,10 @@ button { font: inherit; color: inherit; }
 }
 .lg-count { grid-area: count; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--text-2); padding-top: 8px; }
 .lg-again { color: var(--repasser); font-weight: 700; margin-left: 6px; }
+.lg-anom { color: var(--anomalie); font-weight: 700; margin-left: 6px; }
+.anom-n { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+.anom-n .ico { width: 14px; height: 14px; stroke-width: 2.4; }
+.anom-n[hidden] { display: none; }
 .lg-bar { grid-area: bar; height: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
 .lg-bar > span { display: block; height: 100%; width: 0; background: var(--sc); border-radius: 3px; transition: width 0.25s; }
 .lg-row.complete .lg-bar > span { background: var(--fait); }
@@ -503,7 +514,7 @@ button { font: inherit; color: inherit; }
   position: absolute;
   z-index: 15;
   left: calc(var(--safe-l) + var(--gap) + 2px);
-  bottom: calc(var(--bottom-ui) + var(--gap) + var(--nearby-h, 0px));
+  bottom: calc(var(--bottom-ui) + var(--gap) + var(--dock-h, 0px));
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -528,7 +539,8 @@ button { font: inherit; color: inherit; }
 }
 @keyframes sheet-in { from { transform: translateY(24px); opacity: 0; } }
 .sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.sheet-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.sheet-actions .act { height: 52px; }
 .sheet-actions:empty { display: none; }
 
 .toast {
@@ -704,15 +716,22 @@ button { font: inherit; color: inherit; }
 .locate[data-mode="on"] .ico-on { display: block; color: var(--accent); }
 .locate[data-mode="follow"] .ico-follow { display: block; }
 
-.nearby {
+/* dock, en bas à gauche (à côté des contrôles de la carte) : « Reprendre », encart GPS, prochaine adresse */
+.dock {
   position: absolute;
   z-index: 15;
   left: calc(var(--safe-l) + 8px);
   right: calc(var(--safe-r) + var(--gap) + var(--tap) + 8px);
   bottom: calc(var(--bottom-ui) + 8px);
   max-width: 440px;
-  padding: 6px 4px 4px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  pointer-events: none;  /* la carte reste manipulable autour des panneaux */
 }
+.dock > * { pointer-events: auto; }
+.nearby { padding: 6px 4px 4px 12px; }
 .nearby-head {
   display: flex;
   align-items: center;
@@ -766,6 +785,51 @@ button { font: inherit; color: inherit; }
   flex: none;
 }
 .nb-done:active { transform: scale(0.96); }
+.nb-done .ico { width: 22px; height: 22px; }
+
+/* reprise de la tournée : prochaine adresse, gros boutons à une main */
+.resume {
+  appearance: none;
+  align-self: flex-start;
+  max-width: 100%;
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px 6px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  text-align: left;
+  cursor: pointer;
+}
+.resume:active { transform: scale(0.97); }
+.resume .ico { width: 28px; height: 28px; color: var(--accent); flex: none; }
+.resume-text { display: flex; flex-direction: column; min-width: 0; }
+.resume-text strong { font-size: 16px; }
+#resume-next { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.next { padding: 10px 10px 12px 14px; border-left: 6px solid var(--sc, var(--accent)); }
+.next-head { display: flex; align-items: flex-start; gap: 6px; }
+.next-main { flex: 1; min-width: 0; }
+.next-pos { margin: 0; font-size: 12px; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.03em; }
+.next h2 { margin: 2px 0 0; font-size: 20px; line-height: 1.2; }
+.next .muted { margin: 2px 0 0; }
+.next-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 8px; margin-top: 10px; }
+.next-actions .act { height: 60px; font-size: 17px; }
+.next-actions .ico { width: 24px; height: 24px; }
+.next-more { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.next-more .btn { height: 46px; padding: 0 8px; }
+.next.busy :is(.next-actions, .next-more) { opacity: 0.55; }
+#next-end { margin-top: 10px; }
+
+.reason-dialog { margin-bottom: calc(var(--safe-b) + 8px); width: min(520px, calc(100vw - 16px)); max-width: none; }
+.reason-dialog h2 { margin: 0; font-size: 18px; }
+.reason-dialog .muted { margin: 2px 0 12px; }
+.reason-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.btn.reason { height: auto; min-height: 56px; padding: 6px 10px; white-space: normal; line-height: 1.2; text-align: center; }
+.btn.reason[aria-pressed="true"] { border-color: var(--anomalie); color: var(--anomalie); box-shadow: inset 0 0 0 1px var(--anomalie); }
 
 /* --------------------------------------------------- onglets et vues */
 
@@ -806,7 +870,7 @@ button { font: inherit; color: inherit; }
 
 /* hors de l'onglet Distribuer : la carte reste en place (taille, GPS) mais ses commandes disparaissent,
    sauf zoom et échelle pendant la composition sur la carte (Préparer) */
-#app:not([data-tab="distribute"]) :is(#legend, #sheet, #nearby) { visibility: hidden; }
+#app:not([data-tab="distribute"]) :is(#legend, #sheet, #dock) { visibility: hidden; }
 #app:not([data-tab="distribute"]):not([data-mode="select"]) :is(.mapctl, #scalebar) { visibility: hidden; }
 
 .view {
@@ -950,14 +1014,16 @@ button { font: inherit; color: inherit; }
 .vrow-count { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; flex: none; }
 .vrow.complete .vrow-count { color: var(--fait); }
 .vrow-again { color: var(--repasser); font-weight: 700; margin-left: 6px; }
+.vrow-anom { color: var(--anomalie); font-weight: 700; margin-left: 6px; }
 .vrow-chev { width: 18px; height: 18px; color: var(--text-2); }
 
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 10px 0; }
 .stat { background: var(--surface-2); border-radius: 12px; padding: 10px 8px; display: flex; flex-direction: column; align-items: center; }
 .stat-n { font-size: 28px; font-weight: 750; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .stat-l { font-size: 13px; color: var(--text-2); }
 .stat-done .stat-n { color: var(--fait); }
 .stat-again .stat-n { color: var(--repasser); }
+.stat-anom .stat-n { color: var(--anomalie); }
 .progress { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
 .progress > span { display: block; height: 100%; width: 0; background: var(--fait); border-radius: 4px; transition: width 0.25s; }
 
@@ -966,5 +1032,5 @@ button { font: inherit; color: inherit; }
 @media (min-width: 900px) {
   .legend { width: 340px; }
   /* légende ancrée à gauche : l'encart GPS et l'échelle se placent à sa droite */
-  #app:has(#legend:not([hidden])) :is(.nearby, .scalebar) { left: calc(var(--safe-l) + 2 * var(--gap) + 340px); }
+  #app:has(#legend:not([hidden])) :is(.dock, .scalebar) { left: calc(var(--safe-l) + 2 * var(--gap) + 340px); }
 }

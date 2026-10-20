@@ -2,8 +2,33 @@
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 
+// nombre d'anomalies avec une icône (le caractère ⚠ s'affiche en emoji jaune sur certains systèmes)
+export function anomalyCount(cls, n = 0) {
+  const s = document.createElement('span');
+  s.className = `${cls} anom-n`;
+  s.append(document.createTextNode(''));
+  const svg = document.createElementNS(SVGNS, 'svg');
+  svg.setAttribute('class', 'ico');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const d of ['M12 3.8L2.8 19.8h18.4z', 'M12 9.8v4.6M12 16.9v.4']) {
+    const p = document.createElementNS(SVGNS, 'path');
+    p.setAttribute('d', d);
+    svg.append(p);
+  }
+  s.append(svg);
+  setAnomalyCount(s, n);
+  return s;
+}
+
+export function setAnomalyCount(el, n) {
+  el.firstChild.textContent = n ? String(n) : '';
+  el.hidden = !n;
+  el.title = n ? `${n} anomalie${n > 1 ? 's' : ''}` : '';
+}
+
 // Ligne de rue cliquable : liseré de couleur, nom, détail, compte, chevron.
-export function streetRow({ color, name, sub, count = null, again = 0, complete = false, onClick }) {
+export function streetRow({ color, name, sub, count = null, again = 0, anomalies = 0, complete = false, onClick }) {
   const li = document.createElement('li');
   const b = document.createElement('button');
   b.type = 'button';
@@ -27,6 +52,7 @@ export function streetRow({ color, name, sub, count = null, again = 0, complete 
     ag.textContent = `${again} ↻`;
     c.append(ag);
   }
+  if (anomalies) c.append(anomalyCount('vrow-anom', anomalies));
   const chev = document.createElementNS(SVGNS, 'svg');
   chev.setAttribute('class', 'ico vrow-chev');
   chev.setAttribute('viewBox', '0 0 24 24');

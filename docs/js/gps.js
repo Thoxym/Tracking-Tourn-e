@@ -1,7 +1,7 @@
 // GPS : suivi de position (watchPosition), conversion GPS -> plan par la transformation affine
 // calculée par le pipeline, bouton localiser / suivre, encart des adresses non faites les plus proches.
 
-import { ST_AGAIN, ST_DONE } from './store.js';
+import { ST_AGAIN, ST_DONE, isTreated } from './store.js';
 import { addressLabel, STATUS_LABELS } from './ui.js';
 
 const $ = (id) => document.getElementById(id);
@@ -263,7 +263,14 @@ export class GpsController {
       const done = document.createElement('button');
       done.type = 'button';
       done.className = 'nb-done';
-      done.textContent = 'Fait';
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'ico');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('aria-hidden', 'true');
+      const check = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      check.setAttribute('d', 'M5 12.5l4.5 4.5L19 7.5');
+      svg.append(check);
+      done.append(svg);
       li.append(name, dist, done);
       list.append(li);
       name.addEventListener('click', () => {
@@ -280,7 +287,7 @@ export class GpsController {
 
   refresh(message, force = false) {
     const card = $('nearby');
-    const show = this.mode !== 'off' && !this.ui.sheetAddress;
+    const show = this.mode !== 'off' && !this.ui.sheetAddress && !this.ui.guided;  // reprise : la carte « prochaine » prend la place
     if (card.hidden === show) {
       card.hidden = !show;
       this.ui.updatePadding();
@@ -300,7 +307,7 @@ export class GpsController {
     $('gps-indicator').className = `gps-ind q-${q || 'none'}`;
 
     const items = pos && pos.out === 0
-      ? nearest(this.map.pointable, pos.x, pos.y, (a) => this.map.inScope(a) && !this.map.hidden.has(a.s) && this.store.status(a.id) !== ST_DONE)
+      ? nearest(this.map.pointable, pos.x, pos.y, (a) => this.map.inScope(a) && !this.map.hidden.has(a.s) && !isTreated(this.store.status(a.id)))
       : [];
     const dark = this.ui.isDark();
     this.rows.forEach((row, i) => {
@@ -312,7 +319,7 @@ export class GpsController {
       row.label.textContent = addressLabel(it.a, this.streets);
       row.badge.hidden = this.store.status(it.a.id) !== ST_AGAIN;
       row.dist.textContent = formatDistance(it.d);
-      row.done.setAttribute('aria-label', `Fait : ${addressLabel(it.a, this.streets)}`);
+      row.done.setAttribute('aria-label', `Distribué : ${addressLabel(it.a, this.streets)}`);
     });
     $('nearby-list').hidden = !items.length;
   }

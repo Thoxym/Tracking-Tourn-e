@@ -70,6 +70,7 @@ async function tapAddress(page, id) {
   const [x, y] = await page.evaluate((id) => {
     const { map } = window.neyronApp;
     const a = map.byId.get(id);
+    map._stopAnim();  // une animation en cours (recentrage) déplacerait la carte sous le doigt
     map.setView(a.x, a.y, 3);
     return map.toScreen(a.x, a.y);
   }, id);

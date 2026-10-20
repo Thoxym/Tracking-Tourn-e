@@ -258,13 +258,41 @@ npx playwright test                                 # tests (serveur lancé par 
     - Donnée non fiable : 512 Ko et 5000 lignes au plus, `textContent` seulement.
   - Export / import : `validTour` garde `order` et `reverse` (clés ≤ 64 caractères, 2000 au plus).
   - Tests : `tests/preparer.spec.js` (4 × 2 : charge et réglages, ordre de passage, vérifications, import CSV), et l'export des tournées vérifie l'ordre et le sens. Sabotages détectés (liaisons entre rues supprimées, sens ignoré). Suite : 91 réussis, 1 ignoré ; préparer, tournées et navigation : 108/108 sur 3 répétitions, avec un délai WebKit porté à 75 s (§10).
-- [ ] **L5 — Distribuer**. Distribué / anomalie + motif en 2 taps, rue entière. « Reprendre » : prochaine adresse non traitée dans l'ordre de la tournée. Gros boutons à une main.
+- [x] **L5 — Distribuer** ✅ (20/10/2026).
+  - **Statut `anomalie` avec motif codé** (`why`), liste fermée validée par l'utilisateur (`store.REASONS`) :
+    - `absente` : boîte absente ;
+    - `inaccessible` : boîte inaccessible ;
+    - `pleine` : boîte pleine ou abîmée ;
+    - `introuvable` : numéro introuvable ;
+    - `inconnu` : destinataire inconnu ;
+    - `autre`.
+
+    Aucune note libre (RGPD). Une anomalie est une adresse **traitée** (`isTreated` : distribuée ou anomalie).
+  - **Store** : `setStatus(ids, st, why)` (changer de motif est une action) ; `reason(id)` ; Annuler rétablit statut **et** motif précédents ; l'événement ne porte `why` que pour une anomalie.
+  - **Import** : `validEvent` exige un motif de la liste pour une anomalie (sinon entrée ignorée) et retire `why` des autres statuts. Toujours `schema: 1` : une v0.1 ignorerait seulement ces événements (export v2 en L7).
+  - **Libellés** : « Fait » devient **« Distribué »** partout (le statut interne reste `fait`). « Toute la rue distribuée » marque les restantes (à faire, à repasser) et **conserve les anomalies**. La pastille du haut compte les adresses traitées.
+  - **Panneau d'adresse** : Distribué / Anomalie / À repasser / Remettre à faire, en grille, boutons de 52 px. « Anomalie » reste proposée sur une anomalie (changer de motif). Badge « anomalie : boîte absente ».
+  - **Choix du motif** : `ui.pickReason()`, un `<dialog>` en bas d'écran avec 6 gros boutons (2 colonnes) ; le motif actuel est mis en avant. Le focus initial est sur Annuler (`autofocus`), si bien qu'un Entrée par erreur ne choisit rien. Échap annule sans fermer le panneau.
+  - **Reprendre** (`js/views/distribute.js`, `DistributeView`) :
+    - prochaine adresse = première « à faire » dans l'ordre de passage (`ui.sequence()`), puis les « à repasser » ;
+    - bouton « Reprendre · adresse » en bas à gauche, puis carte « prochaine adresse » : position (« Rue 3/10 · 4 numéros restants »), adresse, côté, lieu-dit ;
+    - boutons de 60 px **Anomalie** et **Distribué** (à droite, sous le pouce), puis À repasser et « Toute la rue (n) » ;
+    - la carte avance seule après chaque action ; la carte du plan garde l'adresse visible (`ensureVisible`, ou recentrage si le zoom est trop faible), sauf en mode suivi GPS ;
+    - un **second toucher dans les 500 ms est ignoré**, pour ne pas distribuer l'adresse suivante par erreur ;
+    - Annuler (toast ou barre du haut) ramène l'adresse précédente ;
+    - fin de tournée : « Tournée terminée · n distribuées, k anomalies » et « Voir le bilan » ;
+    - reprise mémorisée (`localStorage['neyron-tournees.guided']`) : retrouvée après une relance ;
+    - pendant la reprise, l'encart GPS s'efface (`ui.guided`) ; un toucher sur le plan ouvre le panneau d'adresse, et la carte « prochaine » réapparaît ensuite.
+  - **Dock** en bas à gauche (`#dock`) : empile « Reprendre », l'encart GPS et la carte « prochaine adresse ». Sa hauteur entre dans la marge basse de la carte et décale l'échelle (`--dock-h`, ex-`--nearby-h`).
+  - **Rendu** : anomalie = pastille **rouge** (`--anomalie`) à chiffres penchés, point **carré** en vue d'ensemble, bâtiment rouge. Compteurs d'anomalies avec une icône SVG, et non le caractère ⚠ (emoji jaune sous Windows, §10).
+  - **Contrôler** : 4 cases (distribuées, restantes, à repasser, anomalies), « n / N adresses traitées », rue « entière traitée », anomalies par rue. L'encart GPS ignore les adresses traitées.
+  - Tests : `tests/distribuer.spec.js` (4 × 2 : anomalie et motifs depuis le panneau ; reprise complète d'une tournée de deux rues avec double toucher, Annuler, à repasser, anomalie, toute la rue, fin et relance ; panneau pendant la reprise ; comptes, encart GPS, toute la rue et import des motifs). Anciens tests adaptés aux nouveaux libellés. Sabotages détectés (protection du double toucher, motif non rétabli par Annuler). Suite : 99 réussis, 1 ignoré. Distribuer, pointage, GPS et navigation × 3 : 114/114, dont 1 réussi au second essai (blocage WebKit, §10).
 - [ ] **L6 — Contrôler**. Synthèse (distribuées, restantes, anomalies par motif et par rue), liste des non traitées, clôture de la tournée, rapport CSV / JSON.
 - [ ] **L7 — Robustesse**. Export/import v2, migration depuis la v0.1, tests des 3 vues, revue RGPD (motifs, rapport agrégé).
 - [ ] **L8 — Déploiement de la branche** (canal à décider, accord explicite).
 
 **À valider par l'utilisateur** :
-- statuts et liste des motifs (proposition : boîte absente, boîte inaccessible, boîte pleine ou abîmée, numéro introuvable, destinataire inconnu, autre) ;
+- ~~statuts et liste des motifs~~ : validés le 20/10/2026 (L5) ;
 - nom de l'app (sans marque La Poste) ;
 - canal de déploiement de la branche.
 
@@ -372,11 +400,11 @@ neyron-tournees/
 │   ├── sw.js
 │   ├── css/app.css
 │   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js,
-│   │                     #   tabs.js, tourplan.js, views/ (prepare.js, control.js, common.js) — branche facteur
+│   │                     #   tabs.js, tourplan.js, views/ (prepare.js, distribute.js, control.js, common.js) — branche facteur
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
-                          #   branche facteur : navigation, tournees, preparer),
+                          #   branche facteur : navigation, tournees, preparer, distribuer),
                           #   helpers.js (outils communs), serve.py (serveur statique des tests)
 ```
 
@@ -503,7 +531,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 
 ### 8.2 Stockage (`store.js`)
 - IndexedDB, base **`neyron-tournees`**, trois stores :
-  - `events` : `{dev, seq, t, tour, ids[], st, grp, undoOf?}`, clé `[dev, seq]`, `st` ∈ `"fait" | "a_repasser" | "a_faire"` ;
+  - `events` : `{dev, seq, t, tour, ids[], st, grp, undoOf?}`, clé `[dev, seq]`, `st` ∈ `"fait" | "a_repasser" | "a_faire"` (branche facteur : plus `"anomalie"` avec `why`, motif codé, §2 bis L5) ;
   - `tours` : `{id, name, createdAt, archived}` (branche facteur : plus `updatedAt`, `ids[]`, `order[]`, `reverse[]`, §2 bis) ;
   - `meta` : `deviceId`, compteur `seq`, version des données, préférences.
 - **L'état courant est dérivé du journal** : pour chaque `id`, le dernier événement de la tournée active l'emporte, ordre `(t, dev, seq)` (départage déterministe entre appareils).
@@ -616,6 +644,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **Couleurs** sur 6 chiffres (`#888` mal interprété a déjà donné du bleu marine avec reportlab).
 - **Doublons BAN** : une adresse peut figurer deux fois avec le même `id` (deux entrées, ex. 2 Impasse Privée des Capucins). L'id étant la clé de progression, le pipeline garde la première occurrence et le signale.
 - **Rang `s` des rues** : c'est le rang alphabétique dans les données, qui se décale si une voie apparaît dans un nouveau millésime BAN. Pour enregistrer quelque chose par rue (ordre, sens), utiliser la **clé de voie** (`01275_0420`, début de l'id des adresses, `tourplan.streetKeys`).
+- **Caractère ⚠ (U+26A0)** : même suivi du sélecteur de texte U+FE0E, WebKit sous Windows l'affiche en emoji jaune. Utiliser une icône SVG (`common.anomalyCount`).
 - **CSV venant d'Excel en français** : souvent en Windows-1252, avec `;`. Décoder en UTF-8 strict (`TextDecoder('utf-8', {fatal: true})`), puis Windows-1252 en cas d'échec.
 - **Entrée dans un `<dialog>` à formulaire** : elle déclenche le premier bouton `submit` du formulaire (ici « Annuler »). `ui.prompt` intercepte Entrée pour valider.
 - **Champs de saisie sur iOS** : police d'au moins 16 px, sinon Safari zoome la page au focus. Et `user-select: text` sur le champ, puisque le `body` est en `user-select: none`.
@@ -634,7 +663,13 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **Playwright + Chromium, géolocalisation simulée** : `setGeolocation` avec les mêmes coordonnées et une autre précision ne déclenche pas de nouvelle position ; décaler légèrement la position dans les tests.
 - **`python -m http.server` et tests en parallèle** : sa file d'attente de 5 connexions déborde quand plusieurs navigateurs précachent l'app en même temps. Sous Windows, cela donne des connexions refusées et une app qui ne démarre pas (timeouts aléatoires). Les tests utilisent donc `tests/serve.py` (file de 256).
 - **Chromium hors ligne et cache HTTP** : avec `setOffline(true)`, Chromium peut encore servir un fichier depuis son cache HTTP. Un fichier absent du précache passe alors inaperçu (l'iPhone, lui, ne garantit pas ce cache). Le test hors ligne vérifie donc que chaque ressource chargée est dans le cache du SW.
-- **WebKit sous Windows, tests en parallèle** : le rendu est logiciel. Avec 8 workers et `--repeat-each=3`, les tests de tournées les plus longs atteignent ~50 s : le projet `webkit-iphone` a donc un délai de 75 s (Chromium : 45 s). Une fois, un worker est resté bloqué après la fin des tests, avec un `WebKitNetworkProcess` orphelin : arrêter les processus `node` de Playwright et `tests/serve.py`, puis relancer avec `--reporter=list > fichier` pour voir où ça bloque.
+- **WebKit sous Windows, tests en parallèle** :
+  - Le rendu est logiciel. Avec 8 workers et `--repeat-each=3`, les tests de tournées les plus longs atteignent ~50 s : le projet `webkit-iphone` a donc un délai de 75 s (Chromium : 45 s).
+  - Une fois, un worker est resté bloqué après la fin des tests, avec un `WebKitNetworkProcess` orphelin. Arrêter alors les processus `node` de Playwright et `tests/serve.py`, puis relancer avec `--reporter=list > fichier` pour voir où ça bloque.
+  - Rarement (environ 1 exécution WebKit sur 50 dans les tests longs, sous charge), un clic attend « visible, enabled and stable » jusqu'au délai, sans aucune nouvelle tentative dans le journal. La page, elle, répond : capture et instantané d'accessibilité fonctionnent. C'est le `requestAnimationFrame` du script injecté par Playwright qui ne vient plus.
+  - Côté app, au repos : 0 mutation du DOM, 0 rendu de carte, ~50 images/s. Test A/B L4 / L5 (navigation et Préparer, × 10) : 0 blocage des deux côtés.
+  - D'où un second essai pour WebKit seulement (`retries: 1`), signalé « flaky » dans le rapport.
+- **Taper un numéro pendant une animation de la carte** (recentrage de « Reprendre », cadrage) : l'animation continue et déplace le plan sous le doigt. Les outils de test appellent `map._stopAnim()` avant de calculer la position.
 - **Animations dans les tests** : mesurer un zoom après un délai fixe est instable sous WebKit chargé. Attendre la fin de l'animation (`map._anim` nul, `k` modifié).
 - **Safari et pincement de page** : iOS ignore `user-scalable=no` ; les `gesturestart/change` sont bloqués au niveau du document, et sur macOS le pincement trackpad (événements `gesture*` sans pointeur actif) zoome la carte.
 - **v0.2 (PDF reportlab)** : le mode de rendu du texte (`Tr`) persiste → entourer les halos de `saveState()` / `restoreState()` ; exposants et indices Unicode non rendus.
@@ -644,7 +679,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 ## 11. Tests
 
 - **Bureau** : `python -m http.server -d docs 8000`, http://localhost:8000 (contexte sécurisé : géolocalisation et SW fonctionnent).
-- **Playwright** : `npx playwright test` (ou `npm test`), ~50 s, 8 workers. Projets `webkit-iphone` (iPhone 13, délai de 75 s par test) et `chromium` (bureau 1280 × 800, 45 s). La config lance **son propre serveur** `tests/serve.py` sur **http://127.0.0.1:8100** (boucle locale, file d'attente de 256 connexions, §10), distinct du serveur de dev (8000). Chaque test part d'un contexte neuf (IndexedDB, caches, SW vides). Rapport : `npx playwright show-report` ; trace conservée en cas d'échec.
+- **Playwright** : `npx playwright test` (ou `npm test`), ~50 s, 8 workers. Projets `webkit-iphone` (iPhone 13, délai de 75 s par test, un second essai, §10) et `chromium` (bureau 1280 × 800, 45 s). La config lance **son propre serveur** `tests/serve.py` sur **http://127.0.0.1:8100** (boucle locale, file d'attente de 256 connexions, §10), distinct du serveur de dev (8000). Chaque test part d'un contexte neuf (IndexedDB, caches, SW vides). Rapport : `npx playwright show-report` ; trace conservée en cas d'échec.
 - **Contre le site en ligne**, après un push : `BASE_URL=https://thoxym.github.io/Tracking-Tourn-e/ npx playwright test` (PowerShell : `$env:BASE_URL='…'; npx playwright test`). Pas de serveur local. Le site doit servir le commit courant : les tests comparent la version avec celle de `docs/sw.js`. Compter 1 à 3 min de publication après le push.
 - Les 6 cas de référence, et les fichiers qui les couvrent :
   1. chargement du plan (229 numéros pointables, contexte en gris) → `plan.spec.js` ;
@@ -789,3 +824,9 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - Charge = arbre couvrant par rue + liaisons à vol d'oiseau. C'est une estimation affichée comme telle (« ≈ ») ; le vrai chemin attendra le graphe piéton (§12 A). Réglages par appareil, comme le thème.
   - Vérifications informatives, sans « marquer comme vu » pour l'instant : numéros oubliés (même côté, entre deux numéros de la tournée), numéros sans bâtiment, bâtiments sans adresse repérés par le pipeline.
   - Le secteur CSV crée toujours une **nouvelle** tournée, dont l'ordre des lignes donne l'ordre de passage ; pas d'export CSV de secteur (la sauvegarde JSON transporte déjà les tournées).
+- **20/10/2026** — Commit `b51103a` (L4). L5 : distribuer.
+  - Motifs d'anomalie **validés par l'utilisateur** (liste de 6, codes stables, sans note libre).
+  - Anomalie = statut à part entière, avec son motif, et adresse traitée. « À repasser » est gardé pour reporter une adresse dans la tournée.
+  - « Fait » devient « Distribué » dans l'interface. Le statut interne reste `fait`, ce qui garde les données et exports compatibles.
+  - Reprise guidée : carte « prochaine adresse » dans un dock en bas d'écran (zone du pouce), qui avance seule. Protection de 500 ms contre le double toucher, comme l'encart GPS, figé pendant l'appui. Reprise mémorisée d'une relance à l'autre.
+  - Choix du motif dans un `<dialog>` en bas d'écran (focus sur Annuler), partagé par le panneau d'adresse et la reprise.

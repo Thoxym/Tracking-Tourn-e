@@ -67,7 +67,7 @@
       <div class="search-box"><input id="legend-search" class="search" type="search" placeholder="Rechercher une rue" autocomplete="off" enterkeyhint="search" aria-label="Rechercher une rue"></div>
       <ul id="legend-list" class="legend-list"></ul>
       <p id="legend-empty" class="list-empty" hidden>Aucune rue ne correspond.</p>
-      <p class="legend-hint">Case : afficher / masquer · Nom : zoomer sur la rue · ✓✓ : toute la rue faite</p>
+      <p class="legend-hint">Case : afficher / masquer · Nom : zoomer sur la rue · ✓✓ : toute la rue distribuée</p>
     </aside>
 
     <div class="mapctl">
@@ -87,10 +87,41 @@
       </button>
     </div>
 
-    <section id="nearby" class="nearby panel" hidden aria-label="Adresses non faites les plus proches">
-      <div class="nearby-head"><span id="gps-indicator" class="gps-ind"></span><span id="gps-status">Recherche du signal GPS…</span></div>
-      <ol id="nearby-list" class="nearby-list"></ol>
-    </section>
+    <div id="dock" class="dock">
+      <button id="btn-resume" class="resume" type="button" hidden>
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path class="fill" d="M10 8.2v7.6l6-3.8z"/></svg>
+        <span class="resume-text"><strong>Reprendre</strong><span id="resume-next"></span></span>
+      </button>
+      <section id="nearby" class="nearby panel" hidden aria-label="Adresses non traitées les plus proches">
+        <div class="nearby-head"><span id="gps-indicator" class="gps-ind"></span><span id="gps-status">Recherche du signal GPS…</span></div>
+        <ol id="nearby-list" class="nearby-list"></ol>
+      </section>
+      <section id="next-card" class="next panel" hidden aria-label="Prochaine adresse" aria-live="polite">
+        <div class="next-head">
+          <div class="next-main">
+            <p id="next-pos" class="next-pos"></p>
+            <h2 id="next-title"></h2>
+            <p id="next-sub" class="muted"></p>
+          </div>
+          <button id="btn-next-close" class="iconbtn flat" type="button" aria-label="Quitter la reprise" title="Quitter la reprise">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <div id="next-body">
+          <div class="next-actions">
+            <button id="next-anomaly" class="act act-anomalie" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8L2.8 19.8h18.4z"/><path d="M12 9.8v4.6M12 16.9v.4"/></svg>Anomalie</button>
+            <button id="next-done" class="act act-fait" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Distribué</button>
+          </div>
+          <div class="next-more">
+            <button id="next-later" class="btn" type="button">À repasser</button>
+            <button id="next-street" class="btn" type="button">Toute la rue</button>
+          </div>
+        </div>
+        <div id="next-end" hidden>
+          <button id="next-report" class="btn primary wide" type="button">Voir le bilan</button>
+        </div>
+      </section>
+    </div>
 
     <div id="scalebar" class="scalebar" aria-hidden="true"><span class="scalebar-bar"></span><span class="scalebar-label"></span></div>
 
@@ -106,7 +137,10 @@
       </div>
       <div id="sheet-actions" class="sheet-actions">
         <button class="act act-fait" type="button" data-st="fait">
-          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Fait
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Distribué
+        </button>
+        <button class="act act-anomalie" type="button" data-st="anomalie">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8L2.8 19.8h18.4z"/><path d="M12 9.8v4.6M12 16.9v.4"/></svg>Anomalie
         </button>
         <button class="act act-a_repasser" type="button" data-st="a_repasser">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>À repasser
@@ -222,9 +256,10 @@
         <div class="view-sec">
           <h2 id="ctl-title">Bilan de la tournée</h2>
           <div class="stats">
-            <div class="stat stat-done"><span id="ctl-done" class="stat-n">0</span><span class="stat-l">faites</span></div>
+            <div class="stat stat-done"><span id="ctl-done" class="stat-n">0</span><span class="stat-l">distribuées</span></div>
             <div class="stat"><span id="ctl-todo" class="stat-n">0</span><span class="stat-l">restantes</span></div>
             <div class="stat stat-again"><span id="ctl-again" class="stat-n">0</span><span class="stat-l">à repasser</span></div>
+            <div class="stat stat-anom"><span id="ctl-anom" class="stat-n">0</span><span class="stat-l">anomalies</span></div>
           </div>
           <div class="progress"><span id="ctl-bar"></span></div>
           <p id="ctl-summary" class="muted"></p>
@@ -238,7 +273,7 @@
         <button id="ctl-export" class="btn primary wide" type="button">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Exporter la progression
         </button>
-        <p class="view-note">Bientôt : motifs d'anomalie, liste des adresses non traitées, clôture de tournée et rapport CSV.</p>
+        <p class="view-note">Bientôt : anomalies par motif, liste des adresses non traitées, clôture de tournée et rapport CSV.</p>
       </div>
     </section>
 
@@ -273,6 +308,17 @@
         <div class="dialog-actions">
           <button class="btn" type="submit" value="cancel">Non</button>
           <button id="confirm-ok" class="btn primary" type="submit" value="ok">Confirmer</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="reason-dialog" class="dialog panel reason-dialog" aria-labelledby="reason-title">
+      <form method="dialog">
+        <h2 id="reason-title"></h2>
+        <p class="muted">Motif de l'anomalie</p>
+        <div id="reason-list" class="reason-list"></div>
+        <div class="dialog-actions">
+          <button class="btn" type="submit" value="cancel" autofocus>Annuler</button>
         </div>
       </form>
     </dialog>

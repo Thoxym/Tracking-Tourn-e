@@ -1,7 +1,7 @@
 // Progression : journal d'événements dans IndexedDB (base « neyron-tournees »).
 // L'état courant est dérivé du journal ; rien n'est jamais effacé : « Annuler » ajoute des événements.
 //
-// events : {dev, seq, t, tour, ids[], st, grp, undoOf?}  clé [dev, seq]
+// events : {dev, seq, t, tour, ids[], st, why?, grp, undoOf?}  clé [dev, seq] ; why = motif d'une anomalie
 // tours  : {id, name, createdAt, updatedAt, archived, ids[], order?, reverse?}
 //          ids = composition (adresses de la tournée) ; order / reverse = ordre de passage et rues parcourues
 //          en numéros décroissants, par clé de voie BAN (tourplan.js)
@@ -16,11 +16,35 @@ export const DEFAULT_TOUR = 'default';  // même id sur tous les appareils : les
 export const ST_TODO = 'a_faire';
 export const ST_DONE = 'fait';
 export const ST_AGAIN = 'a_repasser';
-export const STATUSES = [ST_TODO, ST_DONE, ST_AGAIN];
+export const ST_ANOMALY = 'anomalie';  // non distribuée, avec un motif : adresse traitée
+export const STATUSES = [ST_TODO, ST_DONE, ST_AGAIN, ST_ANOMALY];
+// motifs d'anomalie : liste fermée, codes stables (exports). Aucune note libre : « destinataire inconnu »
+// concerne déjà les occupants (RGPD, CLAUDE.md §2 bis)
+export const REASONS = [
+  { code: 'absente', label: 'Boîte absente' },
+  { code: 'inaccessible', label: 'Boîte inaccessible' },
+  { code: 'pleine', label: 'Boîte pleine ou abîmée' },
+  { code: 'introuvable', label: 'Numéro introuvable' },
+  { code: 'inconnu', label: 'Destinataire inconnu' },
+  { code: 'autre', label: 'Autre' },
+];
+export const REASON_CODES = REASONS.map((r) => r.code);
+export const reasonLabel = (code) => REASONS.find((r) => r.code === code)?.label || 'Motif inconnu';
+export const isTreated = (st) => st === ST_DONE || st === ST_ANOMALY;  // distribuée, ou anomalie signalée
 
 // ordre total du journal : heure, puis appareil, puis numéro de séquence
 export function compareEvents(a, b) {
   return a.t - b.t || (a.dev < b.dev ? -1 : a.dev > b.dev ? 1 : 0) || a.seq - b.seq;
+}
+
+// applique un événement aux statuts (et motifs) dérivés du journal
+function applyEvent(state, reasons, e) {
+  for (const id of e.ids) {
+    if (e.st === ST_TODO) state.delete(id);
+    else state.set(id, e.st);
+    if (e.st === ST_ANOMALY) reasons.set(id, e.why);
+    else reasons.delete(id);
+  }
 }
 
 function randomId(bytes = 6) {
@@ -75,6 +99,7 @@ export class Store {
     this.allEvents = [];
     this.events = [];       // événements de la tournée active, triés
     this.state = new Map(); // id -> statut (absent = à faire)
+    this.reasons = new Map(); // id -> motif, pour les anomalies
     this.listeners = new Set();
     this.persistent = null;
   }
@@ -135,12 +160,8 @@ export class Store {
   _reload() {
     this.events = this.allEvents.filter((e) => e.tour === this.tour).sort(compareEvents);
     this.state = new Map();
-    for (const e of this.events) {
-      for (const id of e.ids) {
-        if (e.st === ST_TODO) this.state.delete(id);
-        else this.state.set(id, e.st);
-      }
-    }
+    this.reasons = new Map();
+    for (const e of this.events) applyEvent(this.state, this.reasons, e);
   }
 
   // ------------------------------------------------------------- tournées
@@ -161,12 +182,8 @@ export class Store {
   stateOf(tourId) {
     if (tourId === this.tour) return this.state;
     const st = new Map();
-    for (const e of this.allEvents.filter((x) => x.tour === tourId).sort(compareEvents)) {
-      for (const id of e.ids) {
-        if (e.st === ST_TODO) st.delete(id);
-        else st.set(id, e.st);
-      }
-    }
+    const reasons = new Map();
+    for (const e of this.allEvents.filter((x) => x.tour === tourId).sort(compareEvents)) applyEvent(st, reasons, e);
     return st;
   }
 
@@ -223,10 +240,18 @@ export class Store {
     return this.state.get(id) || ST_TODO;
   }
 
+  reason(id) {
+    return this.reasons.get(id) || null;
+  }
+
   // ajoute les événements d'une action (même grp, même heure) dans une seule transaction
   async _append(items, extra = {}) {
     const t = Date.now();
-    const evs = items.map(({ ids, st }) => ({ dev: this.deviceId, seq: ++this.seq, t, tour: this.tour, ids, st }));
+    const evs = items.map(({ ids, st, why }) => {
+      const e = { dev: this.deviceId, seq: ++this.seq, t, tour: this.tour, ids, st };
+      if (st === ST_ANOMALY) e.why = why;
+      return e;
+    });
     const grp = `${this.deviceId}:${evs[0].seq}`;
     for (const e of evs) Object.assign(e, { grp }, extra);
     if (this.db) {
@@ -241,13 +266,15 @@ export class Store {
     return { grp, events: evs };
   }
 
-  // change le statut des ids qui ne l'ont pas déjà ; null si rien ne change
-  async setStatus(ids, st) {
+  // change le statut des ids qui ne l'ont pas déjà (anomalie : statut et motif) ; null si rien ne change
+  async setStatus(ids, st, why = null) {
     if (!STATUSES.includes(st)) throw new Error(`statut inconnu : ${st}`);
-    const changed = [...new Set(ids)].filter((id) => this.status(id) !== st);
+    if (st === ST_ANOMALY && !REASON_CODES.includes(why)) throw new Error(`motif d'anomalie inconnu : ${why}`);
+    if (st !== ST_ANOMALY) why = null;
+    const changed = [...new Set(ids)].filter((id) => this.status(id) !== st || this.reason(id) !== why);
     if (!changed.length) return null;
-    const { grp } = await this._append([{ ids: changed, st }]);
-    const action = { type: 'set', grp, ids: changed, st };
+    const { grp } = await this._append([{ ids: changed, st, why }]);
+    const action = { type: 'set', grp, ids: changed, st, why };
     this._emit(action);
     return action;
   }
@@ -267,7 +294,8 @@ export class Store {
     return this.lastUndoable() !== null;
   }
 
-  // rétablit, pour chaque id de l'action, son statut juste avant elle (un événement par statut rétabli)
+  // rétablit, pour chaque id de l'action, son statut (et son motif) juste avant elle : un événement par
+  // statut rétabli
   async undo() {
     const grp = this.lastUndoable();
     if (!grp) return null;
@@ -276,16 +304,17 @@ export class Store {
     const before = new Map();
     for (const e of this.events) {
       if (compareEvents(e, first) >= 0) break;
-      for (const id of e.ids) before.set(id, e.st);
+      for (const id of e.ids) before.set(id, { st: e.st, why: e.why });
     }
     const byStatus = new Map();
     for (const id of new Set(target.flatMap((e) => e.ids))) {
-      const st = before.get(id) || ST_TODO;
-      if (!byStatus.has(st)) byStatus.set(st, []);
-      byStatus.get(st).push(id);
+      const { st, why } = before.get(id) || { st: ST_TODO };
+      const key = st === ST_ANOMALY ? `${st}:${why}` : st;
+      if (!byStatus.has(key)) byStatus.set(key, { ids: [], st, why });
+      byStatus.get(key).ids.push(id);
     }
-    await this._append([...byStatus].map(([st, ids]) => ({ ids, st })), { undoOf: grp });
-    const action = { type: 'undo', grp, ids: target.flatMap((e) => e.ids), st: target[0].st };
+    await this._append([...byStatus.values()], { undoOf: grp });
+    const action = { type: 'undo', grp, ids: target.flatMap((e) => e.ids), st: target[0].st, why: target[0].why || null };
     this._emit(action);
     return action;
   }

@@ -1,4 +1,4 @@
-// Cas 2 et 3 : pointage d'un numéro (persistant), « Toute la rue faite » puis Annuler.
+// Cas 2 et 3 : pointage d'un numéro (persistant), « Toute la rue distribuée » puis Annuler.
 const { test, expect } = require('@playwright/test');
 const { ID, STREET, tourTotal, trackErrors, openApp, waitReady, tapAddress, statusOf, legendCount, openLegend } = require('./helpers');
 
@@ -12,18 +12,18 @@ async function mark(page, id, st) {
   await expect(page.locator('#sheet')).toBeHidden();
 }
 
-test('tap sur un numéro, Fait : l\'état persiste après rechargement', async ({ page }) => {
+test('tap sur un numéro, Distribué : l\'état persiste après rechargement', async ({ page }) => {
   const errors = trackErrors(page);
   await openApp(page);
 
   await tapAddress(page, ID.gare28);
   await expect(page.locator('#sheet-title')).toHaveText('28 Rue de la Gare');
   await expect(page.locator('#sheet-status')).toHaveText('à faire');
-  expect(await visibleActions(page)).toEqual(['fait', 'a_repasser']);
+  expect(await visibleActions(page)).toEqual(['fait', 'anomalie', 'a_repasser']);
 
   await page.click('#sheet-actions [data-st="fait"]');
   await expect(page.locator('#sheet')).toBeHidden();
-  await expect(page.locator('#toast-msg')).toContainText('28 Rue de la Gare : fait');
+  await expect(page.locator('#toast-msg')).toContainText('28 Rue de la Gare : distribué');
   await expect(page.locator('#toast-action')).toBeVisible();
   expect(await numClass(page, ID.gare28)).toContain('st-fait');
   await expect(legendCount(page, STREET.gare)).toHaveText('1/15');
@@ -32,8 +32,8 @@ test('tap sur un numéro, Fait : l\'état persiste après rechargement', async (
 
   // seules les actions qui changent le statut sont proposées
   await tapAddress(page, ID.gare28);
-  await expect(page.locator('#sheet-status')).toHaveText('fait');
-  expect(await visibleActions(page)).toEqual(['a_repasser', 'a_faire']);
+  await expect(page.locator('#sheet-status')).toHaveText('distribué');
+  expect(await visibleActions(page)).toEqual(['anomalie', 'a_repasser', 'a_faire']);
   await page.click('#btn-sheet-close');
 
   await mark(page, ID.gare26, 'a_repasser');
@@ -56,7 +56,7 @@ test('tap sur un numéro, Fait : l\'état persiste après rechargement', async (
   expect(errors).toEqual([]);
 });
 
-test('« Toute la rue faite » puis Annuler : états précédents restaurés', async ({ page }) => {
+test('« Toute la rue distribuée » puis Annuler : états précédents restaurés', async ({ page }) => {
   const errors = trackErrors(page);
   await openApp(page);
   await mark(page, ID.gare28, 'fait');
@@ -74,7 +74,7 @@ test('« Toute la rue faite » puis Annuler : états précédents restaurés', a
   await expect(page.locator('#confirm')).toHaveJSProperty('open', false);
   await expect(legendCount(page, STREET.gare)).toHaveText('1/151 ↻');
 
-  // acceptation : toute la rue faite
+  // acceptation : toute la rue distribuée
   await all.click();
   await page.click('#confirm-ok');
   await expect(legendCount(page, STREET.gare)).toHaveText('15/15');

@@ -43,11 +43,11 @@ test.describe('GPS autorisé', () => {
     await expect(firstRow(page).locator('.nb-dist')).toHaveText('0 m');
     await expect.poll(() => centerError(page, ID.gare28), 'carte centrée sur la position').toBeLessThan(3);
 
-    // « Fait » depuis l'encart : le 28 sort de la liste, remplacé par le suivant
+    // « Distribué » depuis l'encart : le 28 sort de la liste, remplacé par le suivant
     await firstRow(page).locator('.nb-done').click();
     await expect.poll(() => statusOf(page, ID.gare28)).toBe('fait');
     await expect.poll(() => rowIds(page)).toEqual(nearestIds(ID.gare28, 3, [ID.gare28]));
-    await expect(page.locator('#toast-msg')).toContainText('28 Rue de la Gare : fait');
+    await expect(page.locator('#toast-msg')).toContainText('28 Rue de la Gare : distribué');
 
     // nom de l'adresse : ouvre le panneau, l'encart s'efface pendant ce temps
     await firstRow(page).locator('.nb-name').click();

@@ -16,6 +16,7 @@ async function tapAt(page, id) {
   const [x, y] = await page.evaluate((id) => {
     const { map } = window.neyronApp;
     const a = map.byId.get(id);
+    map._stopAnim();  // une animation en cours (recentrage) déplacerait la carte sous le doigt
     map.setView(a.x, a.y, 3);
     return map.toScreen(a.x, a.y);
   }, id);
@@ -156,7 +157,7 @@ test('progression propre à chaque tournée', async ({ page }) => {
   expect(await activeTour(page)).toMatchObject({ id: 'default' });
   expect(await statusOf(page, ID.gare28)).toBe('a_faire');
   await expect(page.locator('#btn-undo')).toBeDisabled();  // pile d'annulation de la tournée active
-  await expect(page.locator('#tour-list .tour-row', { hasText: 'Mardi' }).locator('.vrow-sub')).toHaveText('15 adresses · 1 faite');
+  await expect(page.locator('#tour-list .tour-row', { hasText: 'Mardi' }).locator('.vrow-sub')).toHaveText('15 adresses · 1 distribuée');
 
   await page.locator('#tour-list .tour-row', { hasText: 'Mardi' }).click();
   expect(await statusOf(page, ID.gare28)).toBe('fait');

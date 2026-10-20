@@ -139,7 +139,7 @@ export class PrepareView {
       const st = store.stateOf(t.id);
       const ids = t.ids.filter((id) => this.rank.has(id));
       const done = ids.filter((id) => st.get(id) === ST_DONE).length;
-      return ids.length ? `${plural(ids.length, 'adresse')} · ${done} ${agree(done, 'faite')}` : 'vide';
+      return ids.length ? `${plural(ids.length, 'adresse')} · ${done} ${agree(done, 'distribuée')}` : 'vide';
     };
     $('tour-list').replaceChildren(...store.liveTours().map((t) => tourRow({
       name: t.name,

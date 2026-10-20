@@ -9,6 +9,7 @@ import { Store } from './store.js';
 import { TabBar } from './tabs.js';
 import { UI } from './ui.js';
 import { ControlView } from './views/control.js';
+import { DistributeView } from './views/distribute.js';
 import { PrepareView } from './views/prepare.js';
 import { WakeLockController } from './wakelock.js';
 
@@ -36,6 +37,7 @@ async function start() {
     const tabs = new TabBar({ ui });
     const app = { map, ui, data, store, gps, wake, backup, versions, tabs };
     app.prepare = new PrepareView(app);
+    app.distribute = new DistributeView(app);
     app.control = new ControlView(app);
     app.debug = new DebugPanel(app);
     window.neyronApp = app;  // accès pour les tests
