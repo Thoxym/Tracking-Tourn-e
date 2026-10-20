@@ -64,6 +64,11 @@ ASSOC_FALLBACK_MAX_M = 6        # distance maximale acceptée pour le repli
 ASSOC_HARD_TYPE = "01"          # bâti dur, préféré au bâti léger ("02") à distance comparable
 ASSOC_HARD_TOLERANCE_M = 3      # un bâti dur jusqu'à 3 m plus loin reste préféré
 
+# Bâtiments sans adresse (contrôle « adresses manquantes » de l'onglet Préparer) : bâti dur, assez grand
+# pour une habitation, sur une parcelle qu'aucune adresse BAN ne cite et loin de tout point d'adresse
+UNADDRESSED_MIN_AREA_M2 = 50
+UNADDRESSED_MIN_DIST_M = 20
+
 # Tracés des rues (domaine non cadastré)
 TRACE_PARCEL_BUFFER_M = 0.3
 TRACE_CLOSING_M = 15            # fermeture morphologique : limite le domaine non cadastré à la commune

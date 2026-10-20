@@ -2,6 +2,7 @@
 // panneau d'adresse, toasts, confirmations.
 
 import { ST_AGAIN, ST_DONE, ST_TODO } from './store.js';
+import { sequence, streetKeys, streetOrder } from './tourplan.js';
 import { fold } from './views/common.js';
 
 const $ = (id) => document.getElementById(id);
@@ -37,6 +38,8 @@ export class UI {
     this.store = store;
     this.streets = data.streets;
     this.byStreet = this.streets.map(() => []);  // adresses de la tournée active, par rue (_applyTour)
+    this.keys = streetKeys(data.addresses, this.streets.length);
+    this.order = [];  // rues de la tournée active dans l'ordre de passage
     this.sheetListeners = [];
     this.tapOverride = null;  // composition sur la carte (Préparer) : le tap ajoute / retire au lieu de pointer
     this._buildLegend();
@@ -52,16 +55,25 @@ export class UI {
     this.refresh();
   }
 
-  // tournée active : périmètre de la carte, rues de la légende, comptes (refit à chaque changement de tournée)
+  // tournée active : périmètre de la carte, rues de la légende dans l'ordre de passage, comptes
+  // (refit à chaque changement de tournée)
   _applyTour(refit = false) {
     const tour = this.store.activeTour;
     this.map.setScope(tour ? tour.ids : []);
     this.byStreet = this.streets.map((_, i) => this.map.pointable.filter((a) => a.s === i && this.map.inScope(a)));
+    this.order = tour ? streetOrder(tour, this.byStreet, this.keys) : [];
+    $('legend-list').append(...this.order.map((i) => this.legendRows[i]),
+      ...this.legendRows.filter((_, i) => !this.byStreet[i].length));
     this.filterLegend($('legend-search').value);
     if (refit && this.map._ready) {
       this.selectStreet(null);
       this.map.fitAll();
     }
+  }
+
+  // adresses de la tournée active dans l'ordre de passage, par rue : [{s, addrs}]
+  sequence() {
+    return sequence(this.store.activeTour, this.byStreet, this.keys);
   }
 
   // ------------------------------------------------------- progression
@@ -350,6 +362,7 @@ export class UI {
         if (address) this.tapOverride(address);
         return;
       }
+      this.map.mark(null);
       if (address) this.openSheet(address);
       else this.closeSheet();
     });
@@ -415,11 +428,13 @@ export class UI {
     this._toastTimer = setTimeout(() => { t.hidden = true; }, ms);
   }
 
-  // saisie d'un texte court (nom de tournée) ; null si annulé ou vide
-  prompt(label, value = '', okLabel = 'OK') {
+  // saisie d'un texte court (nom de tournée) ; null si annulé ou vide. detail : explication sous le champ
+  prompt(label, value = '', okLabel = 'OK', detail = '') {
     const dlg = $('prompt');
     const input = $('prompt-input');
     $('prompt-label').textContent = label;
+    $('prompt-detail').textContent = detail;
+    $('prompt-detail').hidden = !detail;
     $('prompt-ok').textContent = okLabel;
     input.value = value;
     dlg.returnValue = '';

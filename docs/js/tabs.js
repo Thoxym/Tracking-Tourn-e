@@ -49,7 +49,10 @@ export class TabBar {
     }
     for (const [t, id] of Object.entries(VIEWS)) $(id).hidden = t !== tab;
     this.ui.setMenuOpen(false);
-    if (prev === 'distribute') this.ui.closeSheet();
+    if (prev === 'distribute') {
+      this.ui.closeSheet();
+      this.ui.map.mark(null);
+    }
     if (tab === 'distribute') this.ui.updatePadding();
     saveTab(tab);
     for (const fn of this.listeners) fn(tab, prev);

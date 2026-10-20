@@ -227,7 +227,37 @@ npx playwright test                                 # tests (serveur lancé par 
     - **Choisir sur la carte** : la carte s'affiche avec ses contrôles et une barre « Tournée : n adresses — Terminer ». Un tap ajoute ou retire. Changer d'onglet termine la composition.
   - Tests : `tests/tournees.spec.js` (7 × 2 : migration d'une base v0.1 réelle, hors tournée non pointable, composition par rue, progression par tournée, renommer / archiver / restaurer, composition sur la carte, export / import des tournées). Les anciens tests sont adaptés (tournée par défaut de 229 adresses). Suite : 83 réussis, 1 ignoré ; tournées et navigation stables sur 3 répétitions.
   - Limite assumée : les changements de composition ne s'annulent pas (Annuler ne concerne que les statuts).
-- [ ] **L4 — Préparer**. Ordre des rues fixé à la main. Charge estimée (adresses, mètres, durée paramétrable). Adresses manquantes ou sans bâtiment. Import d'un secteur (CSV `voie;début;fin;côté`).
+- [x] **L4 — Préparer** ✅ (20/10/2026).
+  - **Calculs sans DOM** dans `js/tourplan.js` :
+    - `streetOrder`, `sequence` (adresses dans l'ordre de passage) ;
+    - `mstLength` (Prim), `workload`, `findGaps`, `nearUnaddressed`, `parseSector` ;
+    - réglages de l'estimation (`localStorage['neyron-tournees.workload']`).
+  - **Ordre de passage** : champs `order` et `reverse` de la tournée.
+    - Ils sont enregistrés par **clé de voie BAN** (`01275_0420`, début de l'id des adresses ; une clé par rue, vérifié), pas par rang `s`, qui se décalerait si une voie apparaissait.
+    - Sans ordre choisi : ordre alphabétique. Une rue ajoutée ensuite arrive en fin d'ordre.
+    - Préparer, section repliable « Ordre de passage » : Monter, Descendre, Inverser le sens (numéros décroissants), « Ordre alphabétique » (avec confirmation). Le focus reste sur le bouton utilisé.
+    - La légende de Distribuer et Contrôler suivent cet ordre (`ui.order`, `ui.sequence()`).
+  - **Charge estimée** :
+    - nombre d'adresses ;
+    - distance = arbre couvrant des adresses de chaque rue + liaisons à vol d'oiseau entre la fin d'une rue et le début de la suivante ;
+    - durée = adresses × temps par adresse (20 s par défaut) + distance ÷ vitesse (4 km/h).
+    - Réglages propres à l'appareil (virgule acceptée, valeur invalide signalée puis abandonnée). Tournée par défaut : ≈ 10,6 km, ≈ 3 h 55 en ordre alphabétique.
+    - Contrôler affiche le **reste estimé** sur les adresses non faites.
+    - Le Prim de l'app retrouve à 1 m près `streets[].len` du pipeline (scipy).
+  - **Vérifications** (section repliable, nombre de points en titre) :
+    - **numéros oubliés** : hors tournée mais entre deux numéros de la tournée du même côté ; « Ajouter » en un geste ;
+    - **numéros sans bâtiment** (`bat: null`) : ouvre le panneau d'adresse sur la carte ;
+    - **bâtiments sans adresse** à moins de 60 m de la tournée : carte centrée, repère rouge (`map.mark`).
+    - Pipeline : `addresses.json` → `unaddressed: [{x, y, a}]`, soit le bâti dur ≥ 50 m², lié à aucune adresse, sur une parcelle qu'aucune adresse de la commune ne cite, à plus de 20 m de tout point d'adresse (`geo.unaddressed_buildings`, `config.UNADDRESSED_*`). 29 dans la commune, 2 près de la tournée par défaut. Tournée par défaut : 0 oublié, 8 sans bâtiment.
+  - **Import d'un secteur** (CSV) :
+    - format `voie;début;fin;côté`, séparateur `;`, tabulation ou `,` (détecté), guillemets, en-tête et lignes `#` ignorés ;
+    - UTF-8 (BOM accepté), sinon **Windows-1252** (Excel en français) ;
+    - voie comparée sans accents, casse, apostrophes ni tirets, avec une suggestion si le nom est proche (« Rue de la Garre » → « Rue de la Gare » ?) ;
+    - côté : tous, pairs, impairs ; début > fin = sens inversé ; l'ordre des lignes donne l'ordre de passage.
+    - Crée une nouvelle tournée (nom = nom du fichier, modifiable). Le dialogue résume le secteur et les 3 premières lignes ignorées.
+    - Donnée non fiable : 512 Ko et 5000 lignes au plus, `textContent` seulement.
+  - Export / import : `validTour` garde `order` et `reverse` (clés ≤ 64 caractères, 2000 au plus).
+  - Tests : `tests/preparer.spec.js` (4 × 2 : charge et réglages, ordre de passage, vérifications, import CSV), et l'export des tournées vérifie l'ordre et le sens. Sabotages détectés (liaisons entre rues supprimées, sens ignoré). Suite : 91 réussis, 1 ignoré ; préparer, tournées et navigation : 108/108 sur 3 répétitions, avec un délai WebKit porté à 75 s (§10).
 - [ ] **L5 — Distribuer**. Distribué / anomalie + motif en 2 taps, rue entière. « Reprendre » : prochaine adresse non traitée dans l'ordre de la tournée. Gros boutons à une main.
 - [ ] **L6 — Contrôler**. Synthèse (distribuées, restantes, anomalies par motif et par rue), liste des non traitées, clôture de la tournée, rapport CSV / JSON.
 - [ ] **L7 — Robustesse**. Export/import v2, migration depuis la v0.1, tests des 3 vues, revue RGPD (motifs, rapport agrégé).
@@ -342,10 +372,11 @@ neyron-tournees/
 │   ├── sw.js
 │   ├── css/app.css
 │   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js,
-│   │                     #   tabs.js, views/ (prepare.js, control.js, common.js) — branche facteur
+│   │                     #   tabs.js, tourplan.js, views/ (prepare.js, control.js, common.js) — branche facteur
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, version.json (ne pas lire)
-└── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne),
+└── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
+                          #   branche facteur : navigation, tournees, preparer),
                           #   helpers.js (outils communs), serve.py (serveur statique des tests)
 ```
 
@@ -419,6 +450,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
                  "len": 812,                                                // branche facteur : longueur (m)
                  "labels": [ { "x": 895.4, "y": 806.1, "a": -81 } ] } ],   // a : angle en degrés, SVG
   "presets": [ { "id": "default", "name": "Neyron — 10 rues", "ids": ["01275_…", …] } ],  // branche facteur
+  "unaddressed": [ { "x": 812.4, "y": 1530.2, "a": 148 } ],  // branche facteur : bâtiments sans adresse (a : m²)
   // addresses triées par rue, numéro, rep ; "bat" vaut null si aucun bâtiment n'est associé
   "addresses": [
     { "id": "01275_xxxx_00012", "s": 2, "n": 12, "rep": "", "side": "pair",
@@ -472,7 +504,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 ### 8.2 Stockage (`store.js`)
 - IndexedDB, base **`neyron-tournees`**, trois stores :
   - `events` : `{dev, seq, t, tour, ids[], st, grp, undoOf?}`, clé `[dev, seq]`, `st` ∈ `"fait" | "a_repasser" | "a_faire"` ;
-  - `tours` : `{id, name, createdAt, archived}` ;
+  - `tours` : `{id, name, createdAt, archived}` (branche facteur : plus `updatedAt`, `ids[]`, `order[]`, `reverse[]`, §2 bis) ;
   - `meta` : `deviceId`, compteur `seq`, version des données, préférences.
 - **L'état courant est dérivé du journal** : pour chaque `id`, le dernier événement de la tournée active l'emporte, ordre `(t, dev, seq)` (départage déterministe entre appareils).
 - **Groupes et annulation** : chaque action utilisateur a un `grp` unique. Une action groupée dont les états précédents diffèrent (ex. « Toute la rue faite » alors que certains étaient « à repasser ») est annulée par **plusieurs événements** (un par état précédent), tous avec `undoOf: <grp annulé>`. La pile d'annulation est dérivée du journal (dernières actions de l'appareil non annulées) : elle survit à une relance. **On n'efface jamais rien du journal.**
@@ -583,6 +615,8 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **`hidden` et `all: unset`** : `all: unset` sur les boutons annule `hidden`. Ajouter `[hidden]{display:none!important}`.
 - **Couleurs** sur 6 chiffres (`#888` mal interprété a déjà donné du bleu marine avec reportlab).
 - **Doublons BAN** : une adresse peut figurer deux fois avec le même `id` (deux entrées, ex. 2 Impasse Privée des Capucins). L'id étant la clé de progression, le pipeline garde la première occurrence et le signale.
+- **Rang `s` des rues** : c'est le rang alphabétique dans les données, qui se décale si une voie apparaît dans un nouveau millésime BAN. Pour enregistrer quelque chose par rue (ordre, sens), utiliser la **clé de voie** (`01275_0420`, début de l'id des adresses, `tourplan.streetKeys`).
+- **CSV venant d'Excel en français** : souvent en Windows-1252, avec `;`. Décoder en UTF-8 strict (`TextDecoder('utf-8', {fatal: true})`), puis Windows-1252 en cas d'échec.
 - **Entrée dans un `<dialog>` à formulaire** : elle déclenche le premier bouton `submit` du formulaire (ici « Annuler »). `ui.prompt` intercepte Entrée pour valider.
 - **Champs de saisie sur iOS** : police d'au moins 16 px, sinon Safari zoome la page au focus. Et `user-select: text` sur le champ, puisque le `body` est en `user-select: none`.
 - **Pas de serveur LAN** : le SW ne doit jamais attendre le réseau pour servir l'app.
@@ -600,6 +634,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **Playwright + Chromium, géolocalisation simulée** : `setGeolocation` avec les mêmes coordonnées et une autre précision ne déclenche pas de nouvelle position ; décaler légèrement la position dans les tests.
 - **`python -m http.server` et tests en parallèle** : sa file d'attente de 5 connexions déborde quand plusieurs navigateurs précachent l'app en même temps. Sous Windows, cela donne des connexions refusées et une app qui ne démarre pas (timeouts aléatoires). Les tests utilisent donc `tests/serve.py` (file de 256).
 - **Chromium hors ligne et cache HTTP** : avec `setOffline(true)`, Chromium peut encore servir un fichier depuis son cache HTTP. Un fichier absent du précache passe alors inaperçu (l'iPhone, lui, ne garantit pas ce cache). Le test hors ligne vérifie donc que chaque ressource chargée est dans le cache du SW.
+- **WebKit sous Windows, tests en parallèle** : le rendu est logiciel. Avec 8 workers et `--repeat-each=3`, les tests de tournées les plus longs atteignent ~50 s : le projet `webkit-iphone` a donc un délai de 75 s (Chromium : 45 s). Une fois, un worker est resté bloqué après la fin des tests, avec un `WebKitNetworkProcess` orphelin : arrêter les processus `node` de Playwright et `tests/serve.py`, puis relancer avec `--reporter=list > fichier` pour voir où ça bloque.
 - **Animations dans les tests** : mesurer un zoom après un délai fixe est instable sous WebKit chargé. Attendre la fin de l'animation (`map._anim` nul, `k` modifié).
 - **Safari et pincement de page** : iOS ignore `user-scalable=no` ; les `gesturestart/change` sont bloqués au niveau du document, et sur macOS le pincement trackpad (événements `gesture*` sans pointeur actif) zoome la carte.
 - **v0.2 (PDF reportlab)** : le mode de rendu du texte (`Tr`) persiste → entourer les halos de `saveState()` / `restoreState()` ; exposants et indices Unicode non rendus.
@@ -609,7 +644,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 ## 11. Tests
 
 - **Bureau** : `python -m http.server -d docs 8000`, http://localhost:8000 (contexte sécurisé : géolocalisation et SW fonctionnent).
-- **Playwright** : `npx playwright test` (ou `npm test`), ~50 s, 8 workers. Projets `webkit-iphone` (iPhone 13) et `chromium` (bureau 1280 × 800). La config lance **son propre serveur** `tests/serve.py` sur **http://127.0.0.1:8100** (boucle locale, file d'attente de 256 connexions, §10), distinct du serveur de dev (8000). Chaque test part d'un contexte neuf (IndexedDB, caches, SW vides). Rapport : `npx playwright show-report` ; trace conservée en cas d'échec.
+- **Playwright** : `npx playwright test` (ou `npm test`), ~50 s, 8 workers. Projets `webkit-iphone` (iPhone 13, délai de 75 s par test) et `chromium` (bureau 1280 × 800, 45 s). La config lance **son propre serveur** `tests/serve.py` sur **http://127.0.0.1:8100** (boucle locale, file d'attente de 256 connexions, §10), distinct du serveur de dev (8000). Chaque test part d'un contexte neuf (IndexedDB, caches, SW vides). Rapport : `npx playwright show-report` ; trace conservée en cas d'échec.
 - **Contre le site en ligne**, après un push : `BASE_URL=https://thoxym.github.io/Tracking-Tourn-e/ npx playwright test` (PowerShell : `$env:BASE_URL='…'; npx playwright test`). Pas de serveur local. Le site doit servir le commit courant : les tests comparent la version avec celle de `docs/sw.js`. Compter 1 à 3 min de publication après le push.
 - Les 6 cas de référence, et les fichiers qui les couvrent :
   1. chargement du plan (229 numéros pointables, contexte en gris) → `plan.spec.js` ;
@@ -749,3 +784,8 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - Composition par rue (côté, plage) ou sur la carte.
   - Archivage plutôt que suppression.
   - Fusion des tournées importées : dernière écriture gagnante (`updatedAt`).
+- **20/10/2026** — Commit `d77f7d8` (L3). L4 : préparer.
+  - Ordre de passage et sens enregistrés par clé de voie BAN plutôt que par rang alphabétique (stable d'un millésime à l'autre).
+  - Charge = arbre couvrant par rue + liaisons à vol d'oiseau. C'est une estimation affichée comme telle (« ≈ ») ; le vrai chemin attendra le graphe piéton (§12 A). Réglages par appareil, comme le thème.
+  - Vérifications informatives, sans « marquer comme vu » pour l'instant : numéros oubliés (même côté, entre deux numéros de la tournée), numéros sans bâtiment, bâtiments sans adresse repérés par le pipeline.
+  - Le secteur CSV crée toujours une **nouvelle** tournée, dont l'ordre des lignes donne l'ordre de passage ; pas d'export CSV de secteur (la sauvegarde JSON transporte déjà les tournées).

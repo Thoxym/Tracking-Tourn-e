@@ -1,25 +1,38 @@
-// Onglet Préparer : les tournées (créer, choisir, renommer, archiver, restaurer) et la composition de la
-// tournée active, par rue (toute la rue, côté pair / impair, plage de numéros) ou numéro par numéro sur la
-// carte. À venir (L4) : ordre des rues, charge de travail, adresses manquantes, import d'un secteur.
+// Onglet Préparer : les tournées (créer, importer un secteur, choisir, renommer, archiver, restaurer), la
+// composition de la tournée active (par rue : toute la rue, côté pair / impair, plage de numéros ; ou numéro
+// par numéro sur la carte), son ordre de passage, sa charge estimée et les vérifications avant départ.
 
 import { ST_DONE } from '../store.js';
+import {
+  SECTOR_MAX_BYTES, UNADDRESSED_NEAR_M, findGaps, formatDistance, formatDuration, isReversed, mstLength,
+  nearUnaddressed, parseSector, saveWorkloadSettings, validSetting, workload, workloadSettings,
+} from '../tourplan.js';
 import { addressLabel } from '../ui.js';
-import { fold, plural, showStreet, streetRow } from './common.js';
+import { fold, num, plural, showAddress, showPoint, showStreet, streetRow } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 const SVGNS = 'http://www.w3.org/2000/svg';
 const agree = (n, word) => `${word}${n > 1 ? 's' : ''}`;  // accord : « 3 numéros ajoutés »
 
-function checkIcon() {
+function icon(cls, ...paths) {
   const svg = document.createElementNS(SVGNS, 'svg');
-  svg.setAttribute('class', 'ico vrow-check');
+  svg.setAttribute('class', `ico ${cls}`.trim());
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
-  const p = document.createElementNS(SVGNS, 'path');
-  p.setAttribute('d', 'M5 12.5l4.5 4.5L19 7.5');
-  svg.append(p);
+  for (const d of paths) {
+    const p = document.createElementNS(SVGNS, 'path');
+    p.setAttribute('d', d);
+    svg.append(p);
+  }
   return svg;
 }
+
+const span = (cls, text) => {
+  const s = document.createElement('span');
+  s.className = cls;
+  s.textContent = text;
+  return s;
+};
 
 // ligne de tournée : nom, détail, coche si active
 function tourRow({ name, sub, active = false, label, onClick }) {
@@ -29,20 +42,36 @@ function tourRow({ name, sub, active = false, label, onClick }) {
   b.className = `vrow tour-row${active ? ' active' : ''}`;
   if (active) b.setAttribute('aria-current', 'true');
   b.setAttribute('aria-label', label);
-  const main = document.createElement('span');
-  main.className = 'vrow-main';
-  const n = document.createElement('span');
-  n.className = 'vrow-name';
-  n.textContent = name;
-  const s = document.createElement('span');
-  s.className = 'vrow-sub';
-  s.textContent = sub;
-  main.append(n, s);
+  const main = span('vrow-main', '');
+  main.append(span('vrow-name', name), span('vrow-sub', sub));
   b.append(main);
-  if (active) b.append(checkIcon());
+  if (active) b.append(icon('vrow-check', 'M5 12.5l4.5 4.5L19 7.5'));
   b.addEventListener('click', onClick);
   li.append(b);
   return li;
+}
+
+function smallButton({ cls, label, paths, disabled = false, onClick, data = {} }) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `iconbtn flat order-btn ${cls}`;
+  b.setAttribute('aria-label', label);
+  b.title = label;
+  b.disabled = disabled;
+  for (const [k, v] of Object.entries(data)) b.dataset[k] = v;
+  b.append(icon('', ...paths));
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+// fichier texte en UTF-8, sinon Windows-1252 (CSV enregistré par Excel en français)
+async function readText(file) {
+  const buf = await file.arrayBuffer();
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch {
+    return new TextDecoder('windows-1252').decode(buf);
+  }
 }
 
 export class PrepareView {
@@ -52,7 +81,7 @@ export class PrepareView {
     this.editing = null;     // rue ouverte dans l'éditeur
     this.selecting = false;  // composition sur la carte
     this.allByStreet = app.ui.streets.map((_, i) => app.map.pointable.filter((a) => a.s === i));
-    this.order = new Map(app.map.pointable.map((a, k) => [a.id, k]));  // ordre des données : rue, numéro
+    this.rank = new Map(app.map.pointable.map((a, k) => [a.id, k]));  // ordre des données : rue, numéro
 
     $('prep-search').addEventListener('input', (e) => { this.query = fold(e.target.value.trim()); this.renderStreets(); });
     $('btn-tour-new').addEventListener('click', () => this.newTour());
@@ -60,7 +89,16 @@ export class PrepareView {
     $('btn-tour-archive').addEventListener('click', () => this.archiveTour());
     $('btn-tour-select').addEventListener('click', () => this.startSelect());
     $('btn-select-done').addEventListener('click', () => this.stopSelect());
+    $('btn-order-reset').addEventListener('click', () => this.resetOrder());
+    $('sector-file').addEventListener('change', (e) => this.importSector(e.target));
+    $('btn-sector').addEventListener('keydown', (e) => {  // le <label> ne s'active pas au clavier
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        $('sector-file').click();
+      }
+    });
     this._bindEditor();
+    this._bindSettings();
     app.tabs.onChange((tab) => {
       if (this.selecting && tab !== 'prepare') this.stopSelect(false);
       if (tab === 'prepare') this.render();
@@ -76,10 +114,13 @@ export class PrepareView {
     return this.app.store.activeTour;
   }
 
-  // composition enregistrée dans l'ordre des données (adresses inconnues du plan écartées)
+  // ids dans l'ordre des données (adresses inconnues du plan écartées)
+  _sorted(ids) {
+    return [...ids].filter((id) => this.rank.has(id)).sort((a, b) => this.rank.get(a) - this.rank.get(b));
+  }
+
   async setIds(ids) {
-    const sorted = [...ids].filter((id) => this.order.has(id)).sort((a, b) => this.order.get(a) - this.order.get(b));
-    await this.app.store.updateTour(this.tour.id, { ids: sorted });
+    await this.app.store.updateTour(this.tour.id, { ids: this._sorted(ids) });
   }
 
   // --------------------------------------------------------------- rendu
@@ -87,6 +128,8 @@ export class PrepareView {
   render() {
     this.renderTours();
     this.renderActive();
+    this.renderOrder();
+    this.renderChecks();
     this.renderStreets();
   }
 
@@ -94,7 +137,7 @@ export class PrepareView {
     const { store } = this.app;
     const sub = (t) => {
       const st = store.stateOf(t.id);
-      const ids = t.ids.filter((id) => this.order.has(id));
+      const ids = t.ids.filter((id) => this.rank.has(id));
       const done = ids.filter((id) => st.get(id) === ST_DONE).length;
       return ids.length ? `${plural(ids.length, 'adresse')} · ${done} ${agree(done, 'faite')}` : 'vide';
     };
@@ -119,13 +162,137 @@ export class PrepareView {
   renderActive() {
     const { store, ui } = this.app;
     const t = this.tour;
-    const n = ui.byStreet.reduce((k, addrs) => k + addrs.length, 0);
-    const streets = ui.byStreet.filter((addrs) => addrs.length).length;
+    const w = workload(ui.sequence(), workloadSettings());
     $('prep-tour-name').textContent = t.name;
-    $('prep-summary').textContent = n
-      ? `${plural(n, 'adresse')} · ${plural(streets, 'rue')}`
+    $('prep-summary').textContent = w.addresses
+      ? `${plural(w.addresses, 'adresse')} · ${plural(w.streets, 'rue')}`
       : 'Tournée vide : ajoutez des rues ci-dessous ou choisissez les numéros sur la carte.';
+    $('prep-load').hidden = !w.addresses;
+    $('prep-load-dist').textContent = `≈ ${formatDistance(w.meters)}`;
+    $('prep-load-time').textContent = `≈ ${formatDuration(w.seconds)}`;
     $('btn-tour-archive').disabled = store.liveTours().length < 2;  // la dernière tournée en cours reste
+  }
+
+  // rues de la tournée dans l'ordre de passage : monter, descendre, inverser le sens
+  renderOrder() {
+    const { ui } = this.app;
+    const t = this.tour;
+    const dark = ui.isDark();
+    const order = ui.order;
+    $('prep-order-n').textContent = order.length ? plural(order.length, 'rue') : 'tournée vide';
+    $('prep-order').replaceChildren(...order.map((s, k) => {
+      const addrs = ui.byStreet[s];
+      const rev = isReversed(t, s, ui.keys);
+      const [first, last] = rev ? [addrs[addrs.length - 1], addrs[0]] : [addrs[0], addrs[addrs.length - 1]];
+      const name = ui.streets[s].name;
+      const li = document.createElement('li');
+      li.className = 'order-row';
+      li.dataset.s = s;
+      li.style.setProperty('--sc', ui.streets[s].colors[dark ? 1 : 0]);
+      const main = span('vrow-main', '');
+      main.append(span('vrow-name', `${k + 1}. ${name}`),
+        span('vrow-sub', `${plural(addrs.length, 'numéro')} · n° ${num(first)} → ${num(last)} · ${formatDistance(mstLength(addrs))}`));
+      li.append(main,
+        smallButton({ cls: `order-rev${rev ? ' on' : ''}`, label: `Inverser le sens : ${name}`, data: { s, act: 'rev' },
+          paths: ['M7 4v16M3.5 16.5L7 20l3.5-3.5', 'M17 20V4M13.5 7.5L17 4l3.5 3.5'], onClick: () => this.toggleReverse(s) }),
+        smallButton({ cls: 'order-up', label: `Monter : ${name}`, disabled: k === 0, data: { s, act: 'up' },
+          paths: ['M6 14l6-6 6 6'], onClick: () => this.moveStreet(k, -1) }),
+        smallButton({ cls: 'order-down', label: `Descendre : ${name}`, disabled: k === order.length - 1, data: { s, act: 'down' },
+          paths: ['M6 10l6 6 6-6'], onClick: () => this.moveStreet(k, 1) }));
+      li.querySelector('.order-rev').setAttribute('aria-pressed', String(rev));
+      return li;
+    }));
+    $('btn-order-reset').disabled = !(t.order?.length || t.reverse?.length);
+    if (this._focus) {  // garder le focus sur le bouton utilisé (clavier, VoiceOver)
+      const { s, act } = this._focus;
+      this._focus = null;
+      const b = $('prep-order').querySelector(`[data-s="${s}"][data-act="${act}"]`);
+      const alt = $('prep-order').querySelector(`[data-s="${s}"][data-act="${act === 'up' ? 'down' : 'up'}"]`);
+      (b && !b.disabled ? b : alt)?.focus();
+    }
+  }
+
+  // vérifications avant départ : numéros oubliés, numéros sans bâtiment, bâtiments sans adresse
+  renderChecks() {
+    const { ui, data } = this.app;
+    const tourAddrs = ui.order.flatMap((s) => ui.byStreet[s]);
+    const box = $('prep-checks');
+    if (!tourAddrs.length) {
+      $('prep-checks-n').textContent = 'tournée vide';
+      box.replaceChildren(span('list-empty', 'Composez la tournée pour lancer les vérifications.'));
+      return;
+    }
+    const color = (a) => ui.streets[a.s].colors[ui.isDark() ? 1 : 0];
+    const gaps = findGaps(this.allByStreet, new Set(this.tour.ids));
+    const noBld = tourAddrs.filter((a) => !a.bat);
+    const near = nearUnaddressed(data.unaddressed || [], tourAddrs);
+    const n = gaps.length + noBld.length + near.length;
+    $('prep-checks-n').textContent = n ? plural(n, 'point à vérifier', 'points à vérifier') : 'rien à signaler';
+    box.replaceChildren(
+      this._checkGroup({
+        id: 'gaps',
+        title: 'Numéros oubliés ?',
+        none: 'Aucun numéro oublié entre deux numéros de la tournée.',
+        help: 'Hors tournée, mais entre deux numéros de la tournée du même côté de la rue.',
+        rows: gaps.map(({ a, prev, next }) => ({
+          color: color(a), name: addressLabel(a, ui.streets), sub: `entre le ${num(prev)} et le ${num(next)}`,
+          onClick: () => showPoint(this.app, a.x, a.y),
+        })),
+        action: gaps.length ? {
+          label: gaps.length > 1 ? `Ajouter ces ${gaps.length} numéros à la tournée` : 'Ajouter ce numéro à la tournée',
+          run: () => this.addGaps(gaps.map((g) => g.a.id)),
+        } : null,
+      }),
+      this._checkGroup({
+        id: 'nobld',
+        title: 'Numéros sans bâtiment',
+        none: 'Tous les numéros de la tournée ont un bâtiment sur le plan.',
+        help: 'Le point d\'adresse ne touche aucun bâtiment du cadastre : construction récente, ou point mal placé. À vérifier sur place.',
+        rows: noBld.map((a) => ({
+          color: color(a), name: addressLabel(a, ui.streets), sub: a.ld || `côté ${a.side}`,
+          onClick: () => showAddress(this.app, a),
+        })),
+      }),
+      this._checkGroup({
+        id: 'unaddressed',
+        title: 'Bâtiments sans adresse',
+        none: `Aucun bâtiment sans adresse à moins de ${UNADDRESSED_NEAR_M} m de la tournée.`,
+        help: 'Bâti de 50 m² ou plus, sur une parcelle sans adresse : peut-être une boîte absente de la base. À vérifier sur place.',
+        rows: near.map(({ u, a, d }) => ({
+          color: 'var(--text-2)', name: `Bâtiment de ${u.a} m²`, sub: `à ${Math.round(d)} m du ${addressLabel(a, ui.streets)}`,
+          onClick: () => showPoint(this.app, u.x, u.y),
+        })),
+      }),
+    );
+  }
+
+  _checkGroup({ id, title, none, help, rows, action = null }) {
+    const g = document.createElement('div');
+    g.className = 'check-group';
+    g.dataset.check = id;
+    const h = document.createElement('h4');
+    h.textContent = rows.length ? `${title} (${rows.length})` : title;
+    g.append(h);
+    if (!rows.length) {
+      g.append(span('check-none', none));
+      return g;
+    }
+    const p = document.createElement('p');
+    p.className = 'view-note';
+    p.textContent = help;
+    const ul = document.createElement('ul');
+    ul.className = 'vlist';
+    ul.append(...rows.map((r) => streetRow(r)));
+    g.append(p, ul);
+    if (action) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn wide';
+      b.textContent = action.label;
+      b.addEventListener('click', action.run);
+      g.append(b);
+    }
+    return g;
   }
 
   renderStreets() {
@@ -138,7 +305,8 @@ export class PrepareView {
       rows.push(streetRow({
         color: k ? ui.streets[i].colors[dark ? 1 : 0] : 'var(--ctx)',
         name: ui.streets[i].name,
-        sub: k ? `${k}/${addrs.length} dans la tournée` : `${plural(addrs.length, 'numéro')} · hors tournée`,
+        sub: k ? `${k}/${addrs.length} dans la tournée`
+          : `${plural(addrs.length, 'numéro')} · ${formatDistance(ui.streets[i].len || 0)} · hors tournée`,
         count: `${k}/${addrs.length}`,
         complete: k === addrs.length,
         onClick: () => this.openEditor(i),
@@ -182,6 +350,93 @@ export class PrepareView {
   async restore(t) {
     await this.app.store.archiveTour(t.id, false);
     this.app.ui.toast(`« ${t.name} » restaurée`);
+  }
+
+  // Secteur CSV (voie;début;fin;côté) : nouvelle tournée, ordre de passage = ordre des lignes.
+  // Fichier non fiable : taille bornée, lignes validées, affichage par textContent uniquement.
+  async importSector(input) {
+    const { store, ui } = this.app;
+    const file = input.files && input.files[0];
+    if (!file) return;
+    try {
+      if (file.size > SECTOR_MAX_BYTES) throw new Error('fichier trop volumineux (512 Ko au plus)');
+      const r = parseSector(await readText(file), ui.streets, this.allByStreet, ui.keys);
+      const shown = r.errors.slice(0, 3).map((e) => `ligne ${e.line} : ${e.msg}`).join(' ; ');
+      const errs = r.errors.length
+        ? ` ${plural(r.errors.length, 'ligne ignorée', 'lignes ignorées')} (${shown}${r.errors.length > 3 ? ' ; …' : ''}).`
+        : '';
+      if (!r.ids.length) {
+        ui.toast(`Import impossible : aucune ligne valide.${errs}`, { ms: 8000 });
+        return;
+      }
+      const base = file.name.replace(/\.[^.]*$/, '').replace(/[_]+/g, ' ').trim().slice(0, 60) || 'Secteur importé';
+      const name = await ui.prompt('Nom de la nouvelle tournée', base, 'Créer',
+        `Secteur : ${plural(r.ids.length, 'adresse')} sur ${plural(r.streets, 'rue')}, dans l'ordre du fichier.${errs}`);
+      if (!name) return;
+      await store.createTour(name, this._sorted(r.ids), { order: r.order, reverse: r.reverse });
+      ui.toast(`« ${name} » créée : ${plural(r.ids.length, 'adresse')} sur ${plural(r.streets, 'rue')}`, { ms: 5000 });
+    } catch (err) {
+      ui.toast(`Import impossible : ${err.message}`, { ms: 6000 });
+    } finally {
+      input.value = '';  // permet de réimporter le même fichier
+    }
+  }
+
+  // ------------------------------------------------------- ordre de passage
+
+  async moveStreet(k, dir) {
+    const { ui, store } = this.app;
+    const order = [...ui.order];
+    const j = k + dir;
+    if (j < 0 || j >= order.length) return;
+    [order[k], order[j]] = [order[j], order[k]];
+    this._focus = { s: order[j], act: dir < 0 ? 'up' : 'down' };
+    await store.updateTour(this.tour.id, { order: order.map((s) => ui.keys.key[s]) });
+  }
+
+  async toggleReverse(s) {
+    const { ui, store } = this.app;
+    const key = ui.keys.key[s];
+    const rev = new Set(this.tour.reverse || []);
+    if (rev.has(key)) rev.delete(key);
+    else rev.add(key);
+    this._focus = { s, act: 'rev' };
+    await store.updateTour(this.tour.id, { reverse: [...rev] });
+  }
+
+  async resetOrder() {
+    const { ui, store } = this.app;
+    if (!(await ui.confirm('Remettre les rues dans l\'ordre alphabétique, numéros croissants ?', 'Réinitialiser'))) return;
+    await store.updateTour(this.tour.id, { order: [], reverse: [] });
+  }
+
+  async addGaps(ids) {
+    await this.setIds([...this.tour.ids, ...ids]);
+    this.app.ui.toast(`${plural(ids.length, 'numéro ajouté', 'numéros ajoutés')} à la tournée`);
+  }
+
+  // ------------------------------------------------ réglages de l'estimation
+
+  _bindSettings() {
+    const fields = { sec: $('set-sec'), kmh: $('set-kmh') };
+    const show = (v) => String(v).replace('.', ',');
+    const w = workloadSettings();
+    for (const [k, input] of Object.entries(fields)) {
+      input.value = show(w[k]);
+      input.addEventListener('input', () => {
+        const raw = input.value.trim().replace(',', '.');
+        const v = raw === '' ? NaN : Number(raw);
+        const ok = validSetting(k, v);
+        input.setAttribute('aria-invalid', String(!ok));
+        if (!ok) return;
+        saveWorkloadSettings({ ...workloadSettings(), [k]: v });
+        this.renderActive();
+      });
+      input.addEventListener('blur', () => {  // valeur invalide abandonnée : on réaffiche la valeur en vigueur
+        input.value = show(workloadSettings()[k]);
+        input.removeAttribute('aria-invalid');
+      });
+    }
   }
 
   // ------------------------------------------------- éditeur de rue

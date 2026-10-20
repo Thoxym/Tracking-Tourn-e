@@ -2,7 +2,9 @@
 // L'état courant est dérivé du journal ; rien n'est jamais effacé : « Annuler » ajoute des événements.
 //
 // events : {dev, seq, t, tour, ids[], st, grp, undoOf?}  clé [dev, seq]
-// tours  : {id, name, createdAt, updatedAt, archived, ids[]}  ids = composition (adresses de la tournée)
+// tours  : {id, name, createdAt, updatedAt, archived, ids[], order?, reverse?}
+//          ids = composition (adresses de la tournée) ; order / reverse = ordre de passage et rues parcourues
+//          en numéros décroissants, par clé de voie BAN (tourplan.js)
 // meta   : {key, value}  deviceId, seq, activeTour, dataVersion, persistAsked, persist
 //
 // La progression est propre à chaque tournée (champ `tour` des événements). Changer la composition
@@ -168,8 +170,9 @@ export class Store {
     return st;
   }
 
-  async createTour(name, ids = []) {
-    const t = newTour(`t-${randomId(5)}`, name, ids);
+  // extra : ordre de passage d'un secteur importé ({order, reverse})
+  async createTour(name, ids = [], extra = {}) {
+    const t = Object.assign(newTour(`t-${randomId(5)}`, name, ids), extra);
     this.tours.push(t);
     await this._save({}, [t]);
     await this.setActiveTour(t.id);

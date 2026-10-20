@@ -202,6 +202,31 @@ def associate(points, cads, parcels_by_id, bld_geoms, bld_types):
     return out
 
 
+def unaddressed_buildings(bld_geoms, bld_types, linked, parcel_geoms, parcel_ids, addressed, addr_points):
+    """Bâtiments qui pourraient porter une adresse absente de la BAN : bâti dur d'au moins
+    UNADDRESSED_MIN_AREA_M2, lié à aucune adresse, sur une parcelle qu'aucune adresse ne cite
+    (`addressed` : ids de parcelles de toutes les adresses de la commune) et loin de tout point d'adresse.
+    Renvoie les index des bâtiments retenus."""
+    areas = shapely.area(bld_geoms)
+    cand = [k for k in range(len(bld_geoms)) if k not in linked and bld_types[k] == config.ASSOC_HARD_TYPE
+            and areas[k] >= config.UNADDRESSED_MIN_AREA_M2]
+    if not cand:
+        return []
+    reps = shapely.point_on_surface(bld_geoms[cand])
+    b_idx, p_idx = STRtree(parcel_geoms).query(reps, predicate="within")
+    parcel_of = {cand[b]: parcel_ids[p] for b, p in zip(b_idx.tolist(), p_idx.tolist())}
+    near = STRtree(addr_points)
+    out = []
+    for k in cand:
+        pid = parcel_of.get(k)
+        if pid is None or pid in addressed:  # hors parcelle de la commune, ou parcelle déjà adressée
+            continue
+        if len(near.query(bld_geoms[k], predicate="dwithin", distance=config.UNADDRESSED_MIN_DIST_M)):
+            continue
+        out.append(k)
+    return out
+
+
 # ------------------------------------------------------------ tracés des rues
 
 

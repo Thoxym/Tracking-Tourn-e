@@ -3,7 +3,7 @@
 const SVGNS = 'http://www.w3.org/2000/svg';
 
 // Ligne de rue cliquable : liseré de couleur, nom, détail, compte, chevron.
-export function streetRow({ color, name, sub, count, again = 0, complete = false, onClick }) {
+export function streetRow({ color, name, sub, count = null, again = 0, complete = false, onClick }) {
   const li = document.createElement('li');
   const b = document.createElement('button');
   b.type = 'button';
@@ -20,7 +20,7 @@ export function streetRow({ color, name, sub, count, again = 0, complete = false
   main.append(n, s);
   const c = document.createElement('span');
   c.className = 'vrow-count';
-  c.textContent = count;
+  c.textContent = count ?? '';
   if (again) {
     const ag = document.createElement('span');
     ag.className = 'vrow-again';
@@ -45,6 +45,26 @@ export function showStreet(app, i) {
   app.tabs.select('distribute');
   app.ui.selectStreet(i);
 }
+
+// Montrer un point à vérifier : onglet Distribuer, carte centrée dessus, repère
+export function showPoint(app, x, y) {
+  app.tabs.select('distribute');
+  app.ui.selectStreet(null);
+  app.map.centerOn(x, y, { minK: 3 });
+  app.map.mark(x, y);
+}
+
+// Montrer une adresse de la tournée : onglet Distribuer, carte centrée, panneau d'adresse ouvert
+export function showAddress(app, a) {
+  app.tabs.select('distribute');
+  app.ui.selectStreet(null);
+  app.map.mark(null);
+  app.map.centerOn(a.x, a.y, { minK: 3, animate: false });
+  app.ui.openSheet(a);
+}
+
+// numéro et suffixe : « 22 bis »
+export const num = (a) => `${a.n}${a.rep ? ` ${a.rep}` : ''}`;
 
 // comparaison sans accents ni casse (recherche de rue)
 export const fold = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();

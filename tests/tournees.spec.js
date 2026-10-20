@@ -227,6 +227,11 @@ test('export puis import : les tournées et leur composition suivent', async ({ 
   await openApp(page);
   await newTour(page, 'Mardi');
   await editStreet(page, STREET.gare, { side: 'pair' });
+  // ordre de passage et sens (L4), par clé de voie BAN
+  await page.evaluate((s) => {
+    const { store, ui } = window.neyronApp;
+    return store.updateTour(store.tour, { order: [ui.keys.key[s]], reverse: [ui.keys.key[s]] });
+  }, STREET.gare);
   await page.evaluate(() => { navigator.canShare = () => false; });
   await page.click('#btn-menu');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
@@ -246,6 +251,9 @@ test('export puis import : les tournées et leur composition suivent', async ({ 
   await expect.poll(() => pageB.evaluate(() => window.neyronApp.store.tours.length)).toBe(2);
   const imported = await pageB.evaluate((id) => window.neyronApp.store.tours.find((t) => t.id === id), mardi.id);
   expect(imported.ids).toEqual(mardi.ids);
+  expect(mardi.reverse).toEqual(['01275_0420']);  // clé de voie de la Rue de la Gare (ids 01275_0420_…)
+  expect(imported.order).toEqual(mardi.order);
+  expect(imported.reverse).toEqual(mardi.reverse);
   expect(await activeTour(pageB)).toMatchObject({ id: 'default' });  // l'import ne change pas la tournée active
   await ctxB.close();
 });

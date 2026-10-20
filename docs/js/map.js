@@ -119,6 +119,7 @@ export class MapView {
     }
 
     this.ring = el('circle', { class: 'sel-ring', r: 1, display: 'none' }, this.lSelect);
+    this.markEl = el('circle', { class: 'mark-ring', r: 1, display: 'none' }, this.lSelect);
 
     this.lGps.setAttribute('display', 'none');
     this.gpsAcc = el('circle', { class: 'gps-acc', r: 1 }, this.lGps);
@@ -249,6 +250,7 @@ export class MapView {
     this.svg.classList.toggle('z-low', k < K_NUMBERS);
     this.svg.classList.toggle('z-min', k < K_LABELS);
     this._updateRing();
+    this._updateMark();
   }
 
   setPadding(p) {
@@ -403,6 +405,21 @@ export class MapView {
     this.ring.setAttribute('cx', a.x);
     this.ring.setAttribute('cy', a.y);
     this.ring.setAttribute('r', 17 / this.k);
+  }
+
+  // repère sur un point à vérifier (bâtiment sans adresse, numéro hors tournée) ; null pour l'effacer
+  mark(x, y) {
+    this.marked = x == null ? null : { x, y };
+    this._updateMark();
+  }
+
+  _updateMark() {
+    const m = this.marked;
+    this.markEl.setAttribute('display', m ? 'inline' : 'none');
+    if (!m) return;
+    this.markEl.setAttribute('cx', m.x);
+    this.markEl.setAttribute('cy', m.y);
+    this.markEl.setAttribute('r', 22 / this.k);
   }
 
   // numéro pointable visible le plus proche, à 22 px maximum

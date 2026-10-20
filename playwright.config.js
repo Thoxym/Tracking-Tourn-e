@@ -26,8 +26,9 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    // moteur de Safari, profil iPhone (écran, tactile, user agent) : la cible réelle
-    { name: 'webkit-iphone', use: { ...devices['iPhone 13'] } },
+    // moteur de Safari, profil iPhone (écran, tactile, user agent) : la cible réelle. Sous Windows, WebKit
+    // dessine en logiciel : les tests les plus longs atteignent ~50 s quand 8 workers tournent en parallèle
+    { name: 'webkit-iphone', use: { ...devices['iPhone 13'] }, timeout: 75_000 },
     { name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
   ],
   webServer: process.env.BASE_URL ? undefined : {

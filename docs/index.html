@@ -122,9 +122,19 @@
         <div class="view-sec">
           <h3>Tournées</h3>
           <ul id="tour-list" class="vlist vlist-top"></ul>
-          <button id="btn-tour-new" class="btn wide" type="button">
-            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nouvelle tournée
-          </button>
+          <div class="btn-row">
+            <button id="btn-tour-new" class="btn" type="button">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nouvelle tournée
+            </button>
+            <label id="btn-sector" class="btn" for="sector-file" tabindex="0" role="button">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Importer un secteur
+            </label>
+          </div>
+          <input id="sector-file" class="vh" type="file" accept=".csv,text/csv,text/plain" tabindex="-1" aria-hidden="true">
+          <details class="fold-help">
+            <summary>Format du secteur (CSV)</summary>
+            <p class="view-note">Une ligne par tronçon : <code>voie;début;fin;côté</code>. Début, fin et côté (tous, pairs, impairs) sont facultatifs ; début plus grand que fin = numéros décroissants. L'ordre des lignes donne l'ordre de passage. Exemple : <code>Route de Genève;193;58;pairs</code></p>
+          </details>
           <details id="tour-archived" class="archived" hidden>
             <summary>Tournées archivées (<span id="tour-archived-n">0</span>)</summary>
             <ul id="tour-archived-list" class="vlist"></ul>
@@ -133,6 +143,10 @@
         <div class="view-sec">
           <h2 id="prep-tour-name"></h2>
           <p id="prep-summary" class="muted"></p>
+          <p id="prep-load" class="load">
+            <span class="load-item"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18c3-1 4-4 6-7s4-5 10-5"/><circle class="fill" cx="4" cy="18" r="1.6"/><circle class="fill" cx="20" cy="6" r="1.6"/></svg><span class="vh">Distance : </span><span id="prep-load-dist"></span></span>
+            <span class="load-item"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg><span class="vh">Durée estimée : </span><span id="prep-load-time"></span></span>
+          </p>
           <div class="btn-row">
             <button id="btn-tour-select" class="btn primary" type="button">
               <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>Choisir sur la carte
@@ -140,14 +154,32 @@
             <button id="btn-tour-rename" class="btn" type="button">Renommer</button>
             <button id="btn-tour-archive" class="btn" type="button">Archiver</button>
           </div>
+          <details id="prep-settings" class="fold-help">
+            <summary>Réglages de l'estimation</summary>
+            <div class="settings">
+              <label for="set-sec">Temps par adresse</label>
+              <span class="unit"><input id="set-sec" class="search num-input" type="text" inputmode="numeric" maxlength="3" autocomplete="off"> s</span>
+              <label for="set-kmh">Vitesse de marche</label>
+              <span class="unit"><input id="set-kmh" class="search num-input" type="text" inputmode="decimal" maxlength="4" autocomplete="off"> km/h</span>
+            </div>
+            <p class="view-note">Distance : chaque rue d'une adresse à l'autre, plus les liaisons à vol d'oiseau entre deux rues, dans l'ordre de passage. Durée : temps par adresse et marche. Réglages propres à cet appareil.</p>
+          </details>
         </div>
+        <details id="prep-order-box" class="view-sec fold">
+          <summary><h3>Ordre de passage</h3><span id="prep-order-n" class="fold-n"></span></summary>
+          <ol id="prep-order" class="vlist order-list"></ol>
+          <button id="btn-order-reset" class="btn wide" type="button">Ordre alphabétique</button>
+        </details>
+        <details id="prep-checks-box" class="view-sec fold">
+          <summary><h3>Vérifications</h3><span id="prep-checks-n" class="fold-n"></span></summary>
+          <div id="prep-checks"></div>
+        </details>
         <div class="view-sec">
           <h3>Rues de la commune</h3>
           <input id="prep-search" class="search" type="search" placeholder="Rechercher une rue" autocomplete="off" enterkeyhint="search" aria-label="Rechercher une rue">
           <ul id="prep-streets" class="vlist"></ul>
           <p id="prep-empty" class="list-empty" hidden>Aucune rue ne correspond.</p>
         </div>
-        <p class="view-note">Bientôt : ordre des rues, charge de travail, adresses manquantes, import d'un secteur.</p>
       </div>
     </section>
 
@@ -196,6 +228,7 @@
           </div>
           <div class="progress"><span id="ctl-bar"></span></div>
           <p id="ctl-summary" class="muted"></p>
+          <p id="ctl-left" class="muted"></p>
         </div>
         <div class="view-sec">
           <h3>Par rue</h3>
@@ -248,6 +281,7 @@
       <form method="dialog">
         <label id="prompt-label" class="dialog-label" for="prompt-input"></label>
         <input id="prompt-input" class="search" type="text" maxlength="80" autocomplete="off" enterkeyhint="done">
+        <p id="prompt-detail" class="dialog-detail" hidden></p>
         <div class="dialog-actions">
           <button class="btn" type="submit" value="cancel">Annuler</button>
           <button id="prompt-ok" class="btn primary" type="submit" value="ok">OK</button>

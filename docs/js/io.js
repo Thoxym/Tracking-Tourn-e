@@ -12,6 +12,8 @@ const MAX_TOUR_IDS = 20000;  // composition d'une tournée (Neyron entière : 94
 const isStr = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max;
 const isSeq = (v) => Number.isSafeInteger(v) && v >= 1;
 const isTime = (v) => Number.isFinite(v) && v > 0;
+// clés de voie (ordre de passage, sens) : chaînes courtes, sans doublon
+const keyList = (v) => (Array.isArray(v) ? [...new Set(v.slice(0, 2000).filter((k) => isStr(k, 64)))] : []);
 const plural = (n, one, many = `${one}s`) => `${n} ${n > 1 ? many : one}`;
 
 export function validEvent(e) {
@@ -35,6 +37,8 @@ export function validTour(t) {
     updatedAt: isTime(t.updatedAt) ? t.updatedAt : 0,  // ancienne sauvegarde : ne remplace jamais une tournée connue
     archived: t.archived === true,
     ids: [...new Set(ids)],
+    order: keyList(t.order),
+    reverse: keyList(t.reverse),
   };
 }
 

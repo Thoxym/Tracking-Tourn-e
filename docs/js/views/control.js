@@ -1,7 +1,8 @@
-// Onglet Contrôler (squelette, phase L1) : bilan de la tournée (faites, restantes, à repasser), détail par rue,
-// export. À venir : motifs d'anomalie, adresses non traitées, clôture de tournée, rapport CSV.
+// Onglet Contrôler : bilan de la tournée (faites, restantes, à repasser, temps restant estimé), détail par rue
+// dans l'ordre de passage, export. À venir (L6) : motifs d'anomalie, adresses non traitées, clôture, rapport CSV.
 
 import { ST_AGAIN, ST_DONE } from '../store.js';
+import { formatDistance, formatDuration, workload, workloadSettings } from '../tourplan.js';
 import { showStreet, streetRow } from './common.js';
 
 const $ = (id) => document.getElementById(id);
@@ -24,8 +25,8 @@ export class ControlView {
     let again = 0;
     let total = 0;
     const rows = [];
-    ui.byStreet.forEach((addrs, i) => {
-      if (!addrs.length) return;  // rues hors de la tournée active
+    for (const i of ui.order) {  // rues de la tournée active, dans l'ordre de passage
+      const addrs = ui.byStreet[i];
       const d = addrs.filter((a) => store.status(a.id) === ST_DONE).length;
       const ag = addrs.filter((a) => store.status(a.id) === ST_AGAIN).length;
       done += d;
@@ -41,7 +42,7 @@ export class ControlView {
         complete: d === addrs.length,
         onClick: () => showStreet(this.app, i),
       }));
-    });
+    }
     $('ctl-streets').replaceChildren(...rows);
     $('ctl-empty').hidden = rows.length > 0;
     $('ctl-done').textContent = String(done);
@@ -50,5 +51,12 @@ export class ControlView {
     const pct = total ? Math.round((100 * done) / total) : 0;
     $('ctl-bar').style.width = `${pct}%`;
     $('ctl-summary').textContent = `${done} / ${total} adresses faites · ${pct} %`;
+    // reste : adresses non faites (à repasser comprises), dans l'ordre de passage
+    const left = workload(ui.sequence().map((g) => ({ ...g, addrs: g.addrs.filter((a) => store.status(a.id) !== ST_DONE) })),
+      workloadSettings());
+    $('ctl-left').hidden = !total;
+    $('ctl-left').textContent = left.addresses
+      ? `Reste ≈ ${formatDuration(left.seconds)} · ${formatDistance(left.meters)} (estimation)`
+      : 'Toutes les adresses sont faites.';
   }
 }

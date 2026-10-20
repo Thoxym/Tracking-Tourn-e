@@ -169,6 +169,21 @@ def build_data(force_extract=False, preview=False):
         shown = ", ".join(f"{a['n']}{a['rep']} {names[a['s']]}" for a in missing[:12])
         log(f"  sans bâtiment : {len(missing)} ({shown}{', …' if len(missing) > 12 else ''})")
 
+    # --- bâtiments sans adresse : parcelles citées et points de toutes les adresses de la commune (tous types)
+    addressed = {c for r in rows for c in r["cad_parcelles"].split("|") if c}
+    orphans = geo.unaddressed_buildings(blds, [p.get("type") for p in bprops], {a["bi"] for a in addrs},
+                                        parcels, [p.get("id") for p in pprops], addressed,
+                                        shapely.points(coords[ok][:, 2:4]))
+    unaddressed = []
+    for k in orphans:
+        rp = shapely.point_on_surface(blds[k])
+        x, y = round(rp.x - x0, 1), round(y1 - rp.y, 1)
+        if 0 <= x <= W and 0 <= y <= H:
+            unaddressed.append({"x": x, "y": y, "a": round(float(blds[k].area))})
+    unaddressed.sort(key=lambda u: (u["y"], u["x"]))
+    log(f"Bâtiments sans adresse : {len(unaddressed)} (bâti dur d'au moins {config.UNADDRESSED_MIN_AREA_M2} m², "
+        f"parcelle sans adresse, à plus de {config.UNADDRESSED_MIN_DIST_M} m de toute adresse)")
+
     # --- tracés et étiquettes
     t = time.perf_counter()
     gaps = geo.uncadastred_domain(parcels, gbox)
@@ -220,13 +235,15 @@ def build_data(force_extract=False, preview=False):
         "affine": {"x": cx, "y": cy, "maxResidual_m": round(float(res.max()), 3)},
     }
     plan_text = "{" + ",\n".join(f"{_j(k)}:{_j(v)}" for k, v in plan.items()) + "}\n"
-    body = _j({**meta, "streets": streets, "presets": presets_out, "addresses": out_addrs})
+    body = _j({**meta, "streets": streets, "presets": presets_out, "unaddressed": unaddressed,
+               "addresses": out_addrs})
     version = hashlib.sha256((body + plan_text).encode("utf-8")).hexdigest()[:8]
     addresses_text = (
         "{" + ",\n".join(f"{_j(k)}:{_j(v)}" for k, v in {"version": version, **meta}.items())
         + ',\n"streets":[\n' + ",\n".join(_j(s) for s in streets)
         + '],\n"presets":[\n' + ",\n".join(_j(pr) for pr in presets_out)
-        + '],\n"addresses":[\n' + ",\n".join(_j(a) for a in out_addrs) + "]}\n"
+        + '],\n"unaddressed":' + _j(unaddressed)
+        + ',\n"addresses":[\n' + ",\n".join(_j(a) for a in out_addrs) + "]}\n"
     )
     _write(config.DATA_DIR / "addresses.json", addresses_text)
     _write(config.DATA_DIR / "plan.json", plan_text)
