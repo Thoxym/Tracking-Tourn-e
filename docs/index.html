@@ -29,7 +29,7 @@
       <button id="btn-legend" class="chip" type="button" aria-expanded="false" aria-controls="legend">
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1.2"/><circle cx="4" cy="12" r="1.2"/><circle cx="4" cy="18" r="1.2"/></svg>
         <span>Rues</span>
-        <span id="total-progress" class="pill">0/229</span>
+        <span id="total-progress" class="pill">0</span>
       </button>
       <div class="spacer"></div>
       <button id="btn-undo" class="iconbtn" type="button" aria-label="Annuler la dernière action" title="Annuler la dernière action" disabled>
@@ -57,14 +57,16 @@
     </div>
     <input id="import-file" class="vh" type="file" accept=".json,application/json" tabindex="-1" aria-hidden="true">
 
-    <aside id="legend" class="legend panel" hidden aria-label="Rues de la tournée">
+    <aside id="legend" class="legend panel" hidden aria-label="Rues">
       <div class="legend-head">
-        <h2>Rues de la tournée</h2>
+        <h2>Rues</h2>
         <button id="btn-legend-close" class="iconbtn flat" type="button" aria-label="Fermer la légende">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
+      <div class="search-box"><input id="legend-search" class="search" type="search" placeholder="Rechercher une rue" autocomplete="off" enterkeyhint="search" aria-label="Rechercher une rue"></div>
       <ul id="legend-list" class="legend-list"></ul>
+      <p id="legend-empty" class="list-empty" hidden>Aucune rue ne correspond.</p>
       <p class="legend-hint">Case : afficher / masquer · Nom : zoomer sur la rue · ✓✓ : toute la rue faite</p>
     </aside>
 
@@ -123,7 +125,9 @@
         </div>
         <div class="view-sec">
           <h3>Rues</h3>
+          <input id="prep-search" class="search" type="search" placeholder="Rechercher une rue" autocomplete="off" enterkeyhint="search" aria-label="Rechercher une rue">
           <ul id="prep-streets" class="vlist"></ul>
+          <p id="prep-empty" class="list-empty" hidden>Aucune rue ne correspond.</p>
         </div>
         <p class="view-note">Bientôt : choisir les rues de la commune, composer et ordonner sa tournée, estimer la charge de travail, vérifier les adresses manquantes.</p>
       </div>

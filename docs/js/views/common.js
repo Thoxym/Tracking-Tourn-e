@@ -46,4 +46,7 @@ export function showStreet(app, i) {
   app.ui.selectStreet(i);
 }
 
+// comparaison sans accents ni casse (recherche de rue)
+export const fold = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
 export const plural = (n, one, many = `${one}s`) => `${n} ${n > 1 ? many : one}`;

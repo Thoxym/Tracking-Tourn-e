@@ -1,54 +1,89 @@
-// Cas 1 : chargement du plan (229 numéros pointables, contexte en gris), gestes de la carte.
+// Cas 1 : chargement du plan (toute la commune, toutes les adresses pointables), recherche de rue, gestes.
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
-const { DOCS, addressData, trackErrors, openApp } = require('./helpers');
+const { DOCS, ID, addressData, total, trackErrors, openApp, statusOf, openLegend } = require('./helpers');
 
-test('le plan se charge : 229 numéros pointables, 11 de contexte en gris', async ({ page }) => {
+const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+test('toute la commune : 941 adresses sur 90 voies, toutes pointables', async ({ page }) => {
   const errors = trackErrors(page);
   await openApp(page);
+  const { streets, addresses, presets } = addressData();
+  expect([addresses.length, streets.length]).toEqual([941, 90]);
 
-  await expect(page.locator('#map text.num')).toHaveCount(240);
-  await expect(page.locator('#map text.num.ctx')).toHaveCount(11);
-  expect(await page.evaluate(() => window.neyronApp.map.pointable.length)).toBe(229);
-  await expect(page.locator('#total-progress')).toHaveText('0/229');
+  await expect(page.locator('#map text.num')).toHaveCount(addresses.length);
+  await expect(page.locator('#map text.num.ctx')).toHaveCount(0);
+  expect(await page.evaluate(() => window.neyronApp.map.pointable.length)).toBe(total());
+  await expect(page.locator('#total-progress')).toHaveText(`0/${total()}`);
 
-  // une ligne de légende par rue, comptes conformes aux données
-  const { streets } = addressData();
+  // une ligne de légende par rue, dans l'ordre alphabétique (sans accents), comptes conformes aux données
   await expect(page.locator('.lg-row')).toHaveCount(streets.length);
   for (const st of streets) {
     await expect(page.locator(`.lg-row[data-s="${st.i}"] .lg-count`)).toHaveText(`0/${st.count}`);
   }
-  expect(streets.reduce((sum, st) => sum + st.count, 0)).toBe(229);
+  expect(streets.reduce((sum, st) => sum + st.count, 0)).toBe(total());
+  const keys = streets.map((st) => fold(st.name));
+  expect(keys).toEqual([...keys].sort());
 
-  // contexte : gris (et non la couleur de la rue)
-  const fills = await page.evaluate(() => {
-    const ctx = document.querySelector('#map text.num.ctx');
-    const s = window.neyronApp.map.byId.get(ctx.dataset.id).s;
-    const own = [...document.querySelectorAll('#map text.num:not(.ctx)')]
-      .find((t) => window.neyronApp.map.byId.get(t.dataset.id).s === s);
-    return { ctx: getComputedStyle(ctx).fill, street: getComputedStyle(own).fill };
-  });
-  const [r, g, b] = fills.ctx.match(/\d+/g).map(Number);
-  expect(Math.max(r, g, b) - Math.min(r, g, b), `gris attendu, obtenu ${fills.ctx}`).toBeLessThan(20);
-  expect(fills.ctx).not.toBe(fills.street);
-
+  // tournée prédéfinie « 10 rues » (id de la tournée par défaut : la progression déjà saisie s'y rattache)
+  expect(presets.map((pr) => pr.id)).toEqual(['default']);
+  expect(presets[0].ids).toHaveLength(229);
+  const ids = new Set(addresses.map((a) => a.id));
+  expect(presets[0].ids.every((id) => ids.has(id))).toBe(true);
   expect(errors).toEqual([]);
 });
 
-test('un numéro de contexte n\'est pas pointable', async ({ page }) => {
+test('couleurs des rues : palette sans les couleurs de statut', async ({ page }) => {
   await openApp(page);
-  // numéro de contexte isolé : aucun numéro pointable à moins de 15 m (rayon de tap : 22 px = 7 m à ce zoom)
-  const [x, y] = await page.evaluate(() => {
-    const { map } = window.neyronApp;
-    const ctx = map.data.addresses.filter((a) => a.ctx);
-    const far = ctx.find((c) => map.pointable.every((a) => Math.hypot(a.x - c.x, a.y - c.y) > 15));
-    map.setView(far.x, far.y, 3);
-    return map.toScreen(far.x, far.y);
+  const { streets } = addressData();
+  const status = await page.evaluate(() => {
+    const css = getComputedStyle(document.documentElement);
+    return ['--fait', '--repasser'].map((v) => css.getPropertyValue(v).trim().toLowerCase());
   });
-  await page.mouse.click(x, y);
-  await page.waitForTimeout(500);
-  await expect(page.locator('#sheet')).toBeHidden();
+  const used = new Set(streets.map((st) => st.colors[0].toLowerCase()));
+  expect(used.size).toBeGreaterThanOrEqual(6);
+  for (const c of status) expect(used.has(c), `couleur de statut ${c} utilisée par une rue`).toBe(false);
+  for (const st of streets) {
+    expect(st.colors.every((c) => /^#[0-9a-f]{6}$/i.test(c)), st.name).toBe(true);
+    expect(st.len, st.name).toBeGreaterThanOrEqual(0);
+  }
+});
+
+test('légende : recherche de rue sans accents ni casse', async ({ page }) => {
+  await openApp(page);
+  await openLegend(page);
+  const { streets } = addressData();
+  const search = page.locator('#legend-search');
+  await search.fill('ecoles');
+  const expected = streets.filter((st) => fold(st.name).includes('ecoles')).map((st) => st.name);
+  expect(expected).toContain('Montée des Écoles');
+  await expect(page.locator('.lg-row:not([hidden]) .lg-name')).toHaveText(expected);
+  await search.fill('zzzz');
+  await expect(page.locator('.lg-row:not([hidden])')).toHaveCount(0);
+  await expect(page.locator('#legend-empty')).toBeVisible();
+  await search.fill('');
+  await expect(page.locator('.lg-row:not([hidden])')).toHaveCount(streets.length);
+  await expect(page.locator('#legend-empty')).toBeHidden();
+
+  // Ctrl+Z dans le champ de recherche annule la saisie, pas la progression
+  await page.evaluate(async (id) => { await window.neyronApp.store.setStatus([id], 'fait'); }, ID.gare28);
+  await search.fill('gare');
+  await search.press('Control+z');
+  await page.waitForTimeout(200);
+  expect(await statusOf(page, ID.gare28)).toBe('fait');
+});
+
+test('Préparer : recherche de rue', async ({ page }) => {
+  await openApp(page);
+  await page.click('#tabbar [data-tab="prepare"]');
+  const { streets } = addressData();
+  await page.locator('#prep-search').fill('GENEVE');
+  await expect(page.locator('#prep-streets .vrow-name')).toHaveText(
+    streets.filter((st) => fold(st.name).includes('geneve')).map((st) => st.name));
+  await page.locator('#prep-search').fill('zzzz');
+  await expect(page.locator('#prep-streets .vrow')).toHaveCount(0);
+  await expect(page.locator('#prep-empty')).toBeVisible();
 });
 
 test('versions de l\'app et des données dans le menu', async ({ page }) => {
@@ -82,8 +117,8 @@ test('gestes : glisser, pincement, double tap, appui long, tap en vue d\'ensembl
     const my = box.top + box.height / 2;
     // zone vide du plan : aucun numéro pointable à moins de 60 m
     let empty = null;
-    for (let x = 100; x < map.W && !empty; x += 20) {
-      for (let y = 100; y < map.H && !empty; y += 20) {
+    for (let x = 100; x < map.W && !empty; x += 40) {
+      for (let y = 100; y < map.H && !empty; y += 40) {
         if (map.pointable.every((a) => Math.hypot(a.x - x, a.y - y) > 60)) empty = [x, y];
       }
     }

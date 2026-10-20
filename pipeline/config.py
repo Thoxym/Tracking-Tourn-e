@@ -1,4 +1,4 @@
-"""Paramètres du pipeline : voies de la tournée, couleurs, marges, seuils."""
+"""Paramètres du pipeline : commune, tournées prédéfinies, couleurs, marges, seuils."""
 
 from pathlib import Path
 
@@ -11,28 +11,18 @@ ICONS_DIR = DOCS_DIR / "icons"
 
 INSEE = "01275"  # Neyron
 
-# Voies de la tournée. L'index dans la liste est l'identifiant de rue (`s`) et la couleur.
-# `min`/`max` : seuls ces numéros sont pointables ; les autres numéros de la voie
-# qui tombent dans le cadre sont gardés comme repères (`ctx: true`).
-STREETS = [
-    {"name": "Montée Neuve"},
-    {"name": "Chemin sous les Saules"},
-    {"name": "Rue de la Gare"},
-    {"name": "Avenue des Trois Glorieuses"},
-    {"name": "Impasse des Pêcheurs"},
-    {"name": "Chemin du Molliet"},
-    {"name": "Impasse Privée B"},
-    {"name": "Chemin du Barry"},
-    {"name": "Route de Genève", "min": 58, "max": 193},
-    {"name": "Montée des Écoles"},
-]
+# Toute la commune : chaque voie qui a au moins une adresse retenue devient une rue ; son rang dans
+# l'ordre alphabétique (sans accents) est l'identifiant `s`. Un écart des totaux fait échouer le build.
+ADDRESS_TYPES = {"entrée"}  # logements, cages d'escalier et bâtiments : hors distribution
+EXPECTED_ADDRESSES = 941  # 942 lignes « entrée », dont un doublon BAN (2 Impasse Privée des Capucins)
+EXPECTED_STREETS = 90
 
-# (clair, sombre) — toujours sur 6 chiffres.
-COLORS = [
+# Palette des rues (clair, sombre), toujours sur 6 chiffres. Ni vert ni orange : réservés aux statuts
+# « fait » et « à repasser ». Deux rues voisines (tracés à moins de NEIGHBOR_DIST_M) ont des couleurs
+# différentes, pour savoir à quelle rue appartient un numéro près d'un carrefour.
+PALETTE = [
     ("#1d5fd1", "#6ea2ff"),
-    ("#1f8a4c", "#5fcf8c"),
     ("#c22f25", "#ff7a6e"),
-    ("#d0560a", "#ff9d55"),
     ("#0b8796", "#4fd3e0"),
     ("#9a6f00", "#e2b84a"),
     ("#c2287c", "#ff79bf"),
@@ -40,12 +30,28 @@ COLORS = [
     ("#283a52", "#c9d6e8"),
     ("#5f7d0e", "#a9cc4a"),
 ]
+NEIGHBOR_DIST_M = 30
 
-# Nombre de numéros pointables attendus par rue : un écart fait échouer le build.
-EXPECTED_COUNTS = [58, 18, 15, 5, 5, 4, 7, 3, 105, 9]
+# Tournées prédéfinies, exportées dans addresses.json (`presets`). `min`/`max` : numéros retenus ;
+# `expected` : nombre attendu, un écart fait échouer le build. L'id `default` est celui de la tournée
+# par défaut de l'app (store.js) : la progression déjà saisie s'y rattache.
+PRESETS = [
+    {"id": "default", "name": "Neyron — 10 rues", "streets": [
+        {"name": "Montée Neuve", "expected": 58},
+        {"name": "Chemin sous les Saules", "expected": 18},
+        {"name": "Rue de la Gare", "expected": 15},
+        {"name": "Avenue des Trois Glorieuses", "expected": 5},
+        {"name": "Impasse des Pêcheurs", "expected": 5},
+        {"name": "Chemin du Molliet", "expected": 4},
+        {"name": "Impasse Privée B", "expected": 7},
+        {"name": "Chemin du Barry", "expected": 3},
+        {"name": "Route de Genève", "min": 58, "max": 193, "expected": 105},
+        {"name": "Montée des Écoles", "expected": 9},
+    ]},
+]
 
 # Emprise
-FRAME_MARGIN_M = 110   # autour des adresses de la tournée
+FRAME_MARGIN_M = 110   # autour des adresses de la commune
 GEOM_MARGIN_M = 150    # parcelles et bâtiments gardés au-delà du cadre
 
 # Transformation GPS -> Lambert-93
@@ -69,7 +75,7 @@ TRACE_MIN_AREA_M2 = 150
 TRACE_PRIVATE_BUFFER_M = 3
 TRACE_SIMPLIFY_M = 0.5
 TRACE_MST_FALLBACK_M = 4
-TRACE_FALLBACK_STREETS = set()  # index des rues tracées en repli MST.buffer(4)
+TRACE_FALLBACK_STREETS = set()  # noms des voies tracées en repli MST.buffer(4)
 
 # Étiquettes de rues
 LABEL_SPACING_M = 450           # une étiquette tous les ~450 m le long de la rue

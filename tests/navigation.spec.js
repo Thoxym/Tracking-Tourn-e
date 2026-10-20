@@ -1,6 +1,6 @@
 // Barre d'onglets Préparer / Distribuer / Contrôler (branche facteur, phase L1).
 const { test, expect } = require('@playwright/test');
-const { ID, GPS, STREET, trackErrors, openApp, waitReady, tapAddress, addressData } = require('./helpers');
+const { ID, GPS, STREET, total, trackErrors, openApp, waitReady, tapAddress, addressData } = require('./helpers');
 
 const tab = (page, name) => page.locator(`#tabbar [data-tab="${name}"]`);
 const current = (page) => page.evaluate(() => window.neyronApp.tabs.current);
@@ -41,7 +41,7 @@ test('Préparer : les rues de la tournée, une rue s\'ouvre sur la carte', async
   await openApp(page);
   await tab(page, 'prepare').click();
   const { streets } = addressData();
-  await expect(page.locator('#prep-summary')).toHaveText(`Tournée · ${streets.length} rues · 229 adresses`);
+  await expect(page.locator('#prep-summary')).toHaveText(`Tournée · ${streets.length} rues · ${total()} adresses`);
   const rows = page.locator('#prep-streets .vrow');
   await expect(rows).toHaveCount(streets.length);
   const gare = rows.nth(STREET.gare);
@@ -64,8 +64,8 @@ test('Contrôler : bilan et détail par rue, à jour en direct', async ({ page }
   await tab(page, 'control').click();
   await expect(page.locator('#ctl-done')).toHaveText('1');
   await expect(page.locator('#ctl-again')).toHaveText('1');
-  await expect(page.locator('#ctl-todo')).toHaveText('227');
-  await expect(page.locator('#ctl-summary')).toHaveText('1 / 229 adresses faites · 0 %');
+  await expect(page.locator('#ctl-todo')).toHaveText(String(total() - 2));
+  await expect(page.locator('#ctl-summary')).toHaveText(`1 / ${total()} adresses faites · 0 %`);
   const gare = page.locator('#ctl-streets .vrow').nth(STREET.gare);
   await expect(gare.locator('.vrow-count')).toHaveText('1/151 ↻');
   await expect(gare.locator('.vrow-sub')).toHaveText('13 restantes');
@@ -73,7 +73,7 @@ test('Contrôler : bilan et détail par rue, à jour en direct', async ({ page }
   // Annuler depuis la barre du haut : le bilan suit sans changer d'onglet
   await page.click('#btn-undo');
   await expect(page.locator('#ctl-again')).toHaveText('0');
-  await expect(page.locator('#ctl-todo')).toHaveText('228');
+  await expect(page.locator('#ctl-todo')).toHaveText(String(total() - 1));
 
   // rue entière faite
   await page.evaluate(async (s) => {

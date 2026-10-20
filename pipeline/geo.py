@@ -221,6 +221,32 @@ def mst_edges(pts):
     return list(zip(m.row.tolist(), m.col.tolist()))
 
 
+def mst_length(pts):
+    """Longueur de l'arbre couvrant des points d'adresse (m) : approximation de la longueur de la voie."""
+    return float(sum(np.hypot(*(pts[i] - pts[j])) for i, j in mst_edges(pts)))
+
+
+def neighbor_colors(geoms, n_colors, dist):
+    """Couleur (index de palette) par géométrie, différente de celle de ses voisines à moins de `dist`.
+    Glouton du plus connecté au moins connecté ; parmi les couleurs libres, la moins utilisée."""
+    tree = shapely.STRtree(geoms)
+    left, right = tree.query(geoms, predicate="dwithin", distance=dist)
+    nbrs = [set() for _ in geoms]
+    for a, b in zip(left.tolist(), right.tolist()):
+        if a != b:
+            nbrs[a].add(b)
+            nbrs[b].add(a)
+    color = [None] * len(geoms)
+    used = [0] * n_colors
+    for i in sorted(range(len(geoms)), key=lambda k: (-len(nbrs[k]), k)):
+        taken = {color[j] for j in nbrs[i] if color[j] is not None}
+        free = [c for c in range(n_colors) if c not in taken] or list(range(n_colors))
+        color[i] = min(free, key=lambda c: (used[c], c))
+        used[color[i]] += 1
+    conflicts = sum(color[a] == color[b] for a in range(len(geoms)) for b in nbrs[a] if a < b)
+    return color, max((len(s) for s in nbrs), default=0), conflicts
+
+
 def uncadastred_domain(parcels, area_box):
     """Domaine non cadastré (voirie) dans la commune : fermeture morphologique des parcelles,
     pour ne pas prendre l'extérieur de la commune (non chargé) pour de la voirie."""

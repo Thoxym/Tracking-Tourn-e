@@ -4,7 +4,7 @@ const net = require('net');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const { test, expect } = require('@playwright/test');
-const { PYTHON, DOCS, SERVE, ID, trackErrors, openApp, waitReady, statusOf } = require('./helpers');
+const { PYTHON, DOCS, SERVE, ID, total, trackErrors, openApp, waitReady, statusOf } = require('./helpers');
 
 const swVersion = (file) => fs.readFileSync(file, 'utf-8').match(/const VERSION = '(\w+)'/)[1];
 const precacheSize = () => fs.readFileSync(path.join(DOCS, 'sw.js'), 'utf-8')
@@ -31,7 +31,7 @@ test('hors ligne après une première visite : l\'app se charge et le pointage e
   await context.setOffline(true);
   await page.reload();
   await waitReady(page);
-  await expect(page.locator('#map text.num')).toHaveCount(240);
+  await expect(page.locator('#map text.num')).toHaveCount(total());
 
   // tout ce que la page a chargé est dans le précache (Chromium pourrait sinon se rabattre sur son
   // cache HTTP et masquer un fichier oublié ; l'iPhone, lui, ne garantit pas ce cache)

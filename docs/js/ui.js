@@ -2,6 +2,7 @@
 // panneau d'adresse, toasts, confirmations.
 
 import { ST_AGAIN, ST_DONE, ST_TODO } from './store.js';
+import { fold } from './views/common.js';
 
 const $ = (id) => document.getElementById(id);
 const THEME_KEY = 'neyron-tournees.theme';  // préférence par appareil (lue avant affichage par theme-init.js)
@@ -211,9 +212,21 @@ export class UI {
       all.addEventListener('click', () => this.markStreet(i));
 
       li.append(check, name, count, bar, all);
+      li.dataset.key = fold(st.name);
       list.append(li);
       return li;
     });
+    $('legend-search').addEventListener('input', (e) => this.filterLegend(e.target.value));
+  }
+
+  filterLegend(query) {
+    const q = fold(query.trim());
+    let shown = 0;
+    for (const li of this.legendRows) {
+      li.hidden = Boolean(q) && !li.dataset.key.includes(q);
+      shown += li.hidden ? 0 : 1;
+    }
+    $('legend-empty').hidden = shown > 0;
   }
 
   setMenuOpen(open) {
@@ -294,7 +307,8 @@ export class UI {
       if (action) action.run();
     });
     window.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+      const typing = e.target.closest?.('input, textarea');  // Ctrl+Z dans la recherche : annule la saisie
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && !typing) {
         e.preventDefault();
         this.undo();
         return;

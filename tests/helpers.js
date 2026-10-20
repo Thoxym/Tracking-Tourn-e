@@ -15,7 +15,14 @@ const ID = {
   gare14: '01275_0420_00014',
   gare9: '01275_0420_00009',
 };
-const STREET = { gare: 2, barry: 7 };
+// rues : index dans l'ordre alphabétique des données (recherchés par nom, stables d'un build à l'autre)
+const streetIndex = (name) => addressData().streets.findIndex((s) => s.name === name);
+const STREET = {
+  get gare() { return streetIndex('Rue de la Gare'); },
+  get barry() { return streetIndex('Chemin du Barry'); },
+};
+// nombre d'adresses pointables (toute la commune)
+const total = () => addressData().addresses.filter((a) => !a.ctx).length;
 const GPS = {
   gare28: { latitude: 45.81218, longitude: 4.929406, accuracy: 6 },  // point BAN du 28 Rue de la Gare
   gare9: { latitude: 45.814024, longitude: 4.932176, accuracy: 6 },   // point BAN du 9 Rue de la Gare
@@ -72,6 +79,6 @@ async function openLegend(page) {
 }
 
 module.exports = {
-  PYTHON, DOCS, SERVE, ID, STREET, GPS,
+  PYTHON, DOCS, SERVE, ID, STREET, GPS, total, streetIndex,
   addressData, trackErrors, waitReady, openApp, tapAddress, statusOf, stateOf, legendCount, openLegend,
 };

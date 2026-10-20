@@ -14,6 +14,7 @@ import math
 import re
 import sys
 import time
+import unicodedata
 
 import numpy as np
 import shapely
@@ -43,6 +44,11 @@ def _write(path, text):
 def rep_rank(rep):
     r = rep.lower()
     return (config.REP_ORDER[r], "") if r in config.REP_ORDER else (10, r)
+
+
+def street_sort_key(name):
+    """Ordre alphabétique sans accents ni casse (« Allée » avant « Avenue », « Écoles » parmi les E)."""
+    return unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower(), name
 
 
 def _num(s):
@@ -78,46 +84,58 @@ def build_data(force_extract=False, preview=False):
     d = np.hypot(px - coords[ok, 2], py - coords[ok, 3])
     log(f"  contrôle BAN x/y vs pyproj(lon/lat) : écart max {d.max():.3f} m")
 
-    # --- sélection des voies
-    by_name = {st["name"]: i for i, st in enumerate(config.STREETS)}
-    present = {r["nom_voie"] for r in rows}
-    absent = [n for n in by_name if n not in present]
-    if absent:
-        raise BuildError(f"voies absentes de la BAN : {', '.join(absent)}")
-    tour, ctx_cand = [], []
-    for r in rows:
-        s = by_name.get(r["nom_voie"])
-        if s is None:
-            continue
-        n = int(r["numero"])
-        st = config.STREETS[s]
-        a = {"row": r, "s": s, "n": n, "rep": r["rep"].strip().lower(),
-             "X": float(r["x"]), "Y": float(r["y"])}
-        (tour if st.get("min", -1) <= n <= st.get("max", 10**9) else ctx_cand).append(a)
-    counts = [sum(a["s"] == i for a in tour) for i in range(len(config.STREETS))]
-    log("Voies (pointables / attendus)")
-    for i, st in enumerate(config.STREETS):
-        flag = "" if counts[i] == config.EXPECTED_COUNTS[i] else "   <-- ÉCART"
-        log(f"  {i} {st['name']:<30} {counts[i]:>4} / {config.EXPECTED_COUNTS[i]}{flag}")
-    log(f"  total {sum(counts)} / {sum(config.EXPECTED_COUNTS)}")
-    if counts != config.EXPECTED_COUNTS:
-        raise BuildError("comptes par rue différents de EXPECTED_COUNTS (voir ci-dessus)")
+    # --- toute la commune : une rue par voie, dans l'ordre alphabétique
+    kept = [r for r in rows if r["type_position"] in config.ADDRESS_TYPES]
+    # une adresse peut figurer deux fois (deux entrées) ; l'id BAN est la clé de progression : on garde la première
+    first = {}
+    for r in kept:
+        first.setdefault(r["id"], r)
+    dups = [r for r in kept if first[r["id"]] is not r]
+    for r in dups:
+        o = first[r["id"]]
+        gap = math.hypot(float(r["x"]) - float(o["x"]), float(r["y"]) - float(o["y"]))
+        log(f"  doublon BAN ignoré : {r['numero']}{r['rep']} {r['nom_voie']} ({r['id']}, à {gap:.0f} m de la première)")
+    kept = list(first.values())
+    names = sorted({r["nom_voie"] for r in kept}, key=street_sort_key)
+    s_of = {n: i for i, n in enumerate(names)}
+    addrs = [{"row": r, "s": s_of[r["nom_voie"]], "n": int(r["numero"]), "rep": r["rep"].strip().lower(),
+              "X": float(r["x"]), "Y": float(r["y"]), "ctx": False} for r in kept]
+    counts = [0] * len(names)
+    for a in addrs:
+        counts[a["s"]] += 1
+    log(f"Commune : {len(addrs)} adresses ({', '.join(sorted(config.ADDRESS_TYPES))}) sur {len(names)} voies "
+        f"(attendu : {config.EXPECTED_ADDRESSES} sur {config.EXPECTED_STREETS}) ; écartées : {len(rows) - len(kept)}")
+    if (len(addrs), len(names)) != (config.EXPECTED_ADDRESSES, config.EXPECTED_STREETS):
+        raise BuildError("totaux de la commune différents de EXPECTED_ADDRESSES / EXPECTED_STREETS")
+
+    # --- tournées prédéfinies
+    presets = []
+    for pr in config.PRESETS:
+        log(f"Tournée prédéfinie « {pr['name']} » (id {pr['id']})")
+        ids, bad = set(), []
+        for spec in pr["streets"]:
+            if spec["name"] not in s_of:
+                raise BuildError(f"voie absente de la BAN : {spec['name']}")
+            sel = [a for a in addrs if a["s"] == s_of[spec["name"]]
+                   and spec.get("min", -1) <= a["n"] <= spec.get("max", 10**9)]
+            ids.update(a["row"]["id"] for a in sel)
+            ok_count = len(sel) == spec["expected"]
+            if not ok_count:
+                bad.append(spec["name"])
+            log(f"  {spec['name']:<30} {len(sel):>4} / {spec['expected']}{'' if ok_count else '   <-- ÉCART'}")
+        if bad:
+            raise BuildError(f"tournée « {pr['name']} » : comptes différents des attendus ({', '.join(bad)})")
+        presets.append({"id": pr["id"], "name": pr["name"], "ids": ids})
 
     # --- cadre
-    P = np.array([[a["X"], a["Y"]] for a in tour])
+    P = np.array([[a["X"], a["Y"]] for a in addrs])
     m = config.FRAME_MARGIN_M
     x0 = float(np.floor(P[:, 0].min() - m))
     y0 = float(np.floor(P[:, 1].min() - m))
     x1 = float(np.ceil(P[:, 0].max() + m))
     y1 = float(np.ceil(P[:, 1].max() + m))
     W, H = x1 - x0, y1 - y0
-    ctx = [a for a in ctx_cand if x0 <= a["X"] <= x1 and y0 <= a["Y"] <= y1]
-    for a in tour:
-        a["ctx"] = False
-    for a in ctx:
-        a["ctx"] = True
-    addrs = tour + ctx
-    log(f"Cadre {W:.0f} x {H:.0f} m (x0={x0:.0f}, y1={y1:.0f}) ; adresses de contexte : {len(ctx)} ; total {len(addrs)}")
+    log(f"Cadre {W:.0f} x {H:.0f} m (x0={x0:.0f}, y1={y1:.0f})")
 
     # --- géométries
     gbox = shapely.box(x0, y0, x1, y1).buffer(config.GEOM_MARGIN_M)
@@ -146,22 +164,31 @@ def build_data(force_extract=False, preview=False):
     no_cad = sum(not c for c in cads)
     log(f"Association : {n_assoc} / {len(addrs)} adresses liées à un bâtiment "
         f"({', '.join(f'{k} {v}' for k, v in sorted(methods.items()))}) ; sans cad_parcelles : {no_cad}")
-    missing = [a for a in addrs if a["bi"] is None and not a["ctx"]]
+    missing = [a for a in addrs if a["bi"] is None]
     if missing:
-        log("  pointables sans bâtiment : " + ", ".join(
-            f"{a['n']}{a['rep']} {config.STREETS[a['s']]['name']}" for a in missing))
+        shown = ", ".join(f"{a['n']}{a['rep']} {names[a['s']]}" for a in missing[:12])
+        log(f"  sans bâtiment : {len(missing)} ({shown}{', …' if len(missing) > 12 else ''})")
 
     # --- tracés et étiquettes
     t = time.perf_counter()
     gaps = geo.uncadastred_domain(parcels, gbox)
     log(f"Domaine non cadastré : {gaps.area / 1e4:.1f} ha ({time.perf_counter() - t:.0f} s)")
-    traces, labels = {}, {}
-    for i, st in enumerate(config.STREETS):
-        sp = np.array([[a["X"], a["Y"]] for a in tour if a["s"] == i])
-        tr, mode = geo.street_trace(sp, gaps, fallback=i in config.TRACE_FALLBACK_STREETS)
+    t = time.perf_counter()
+    traces, labels, lengths, modes = {}, {}, {}, {}
+    for i, name in enumerate(names):
+        sp = np.array([[a["X"], a["Y"]] for a in addrs if a["s"] == i])
+        tr, mode = geo.street_trace(sp, gaps, fallback=name in config.TRACE_FALLBACK_STREETS)
         traces[i] = tr
         labels[i] = geo.street_labels(sp, tr, x0, y1)
-        log(f"  {i} {st['name']:<30} {mode:<14} {tr.area:>8.0f} m2  {len(labels[i])} étiquette(s)")
+        lengths[i] = round(geo.mst_length(sp))
+        modes[mode] = modes.get(mode, 0) + 1
+    log(f"Tracés de {len(names)} voies en {time.perf_counter() - t:.0f} s : "
+        + ", ".join(f"{k} {v}" for k, v in sorted(modes.items()))
+        + f" ; {sum(len(v) for v in labels.values())} étiquettes ; longueur cumulée {sum(lengths.values()) / 1000:.1f} km")
+    color, max_deg, conflicts = geo.neighbor_colors([traces[i] for i in range(len(names))],
+                                                   len(config.PALETTE), config.NEIGHBOR_DIST_M)
+    log(f"Couleurs : {len(config.PALETTE)} teintes, jusqu'à {max_deg} voisines par rue, "
+        f"{conflicts} paire(s) de voisines de même couleur")
 
     # --- sorties
     linked = sorted({a["bi"] for a in addrs if a["bi"] is not None})
@@ -173,7 +200,7 @@ def build_data(force_extract=False, preview=False):
         "buildings": {bid[bi]: geo.svg_path(blds[bi], x0, y1) for bi in linked},
         "traces": {str(i): geo.svg_path(tr, x0, y1) for i, tr in traces.items()},
     }
-    addrs.sort(key=lambda a: (a["s"], a["n"], rep_rank(a["rep"]), a["ctx"]))
+    addrs.sort(key=lambda a: (a["s"], a["n"], rep_rank(a["rep"])))
     out_addrs = [{
         "id": a["row"]["id"], "s": a["s"], "n": a["n"], "rep": a["rep"],
         "side": "pair" if a["n"] % 2 == 0 else "impair",
@@ -184,18 +211,21 @@ def build_data(force_extract=False, preview=False):
     ids = [a["id"] for a in out_addrs]
     if len(set(ids)) != len(ids):
         raise BuildError("identifiants BAN en double")
-    streets = [{"i": i, "name": st["name"], "colors": list(config.COLORS[i]),
-                "count": counts[i], "labels": labels[i]} for i, st in enumerate(config.STREETS)]
+    streets = [{"i": i, "name": name, "colors": list(config.PALETTE[color[i]]), "count": counts[i],
+                "len": lengths[i], "labels": labels[i]} for i, name in enumerate(names)]
+    presets_out = [{"id": pr["id"], "name": pr["name"], "ids": [a["id"] for a in out_addrs if a["id"] in pr["ids"]]}
+                   for pr in presets]
     meta = {
         "frame": {"x0": x0, "y1": y1, "W": W, "H": H},
         "affine": {"x": cx, "y": cy, "maxResidual_m": round(float(res.max()), 3)},
     }
     plan_text = "{" + ",\n".join(f"{_j(k)}:{_j(v)}" for k, v in plan.items()) + "}\n"
-    body = _j({**meta, "streets": streets, "addresses": out_addrs})
+    body = _j({**meta, "streets": streets, "presets": presets_out, "addresses": out_addrs})
     version = hashlib.sha256((body + plan_text).encode("utf-8")).hexdigest()[:8]
     addresses_text = (
         "{" + ",\n".join(f"{_j(k)}:{_j(v)}" for k, v in {"version": version, **meta}.items())
         + ',\n"streets":[\n' + ",\n".join(_j(s) for s in streets)
+        + '],\n"presets":[\n' + ",\n".join(_j(pr) for pr in presets_out)
         + '],\n"addresses":[\n' + ",\n".join(_j(a) for a in out_addrs) + "]}\n"
     )
     _write(config.DATA_DIR / "addresses.json", addresses_text)
@@ -234,19 +264,19 @@ def render_preview(parcels, blds, linked, traces, addrs, x0, y1, W, H, streets, 
 
     for i, tr in traces.items():
         for p in polys(tr):
-            do.polygon(xy(p.exterior.coords), fill=rgba(config.COLORS[i][0], 90))
+            do.polygon(xy(p.exterior.coords), fill=rgba(streets[i]["colors"][0], 90))
     img.paste(over, (0, 0), over)
     for g in parcels:
         for p in polys(g):
             d.line(xy(p.exterior.coords), fill="#c8c8c8", width=1)
-    street_of = {a["bi"]: a["s"] for a in addrs if a["bi"] is not None and not a["ctx"]}
+    street_of = {a["bi"]: a["s"] for a in addrs if a["bi"] is not None}
     for bi, g in enumerate(blds):
-        col = config.COLORS[street_of[bi]][0] if bi in street_of else "#bdbdbd"
+        col = streets[street_of[bi]]["colors"][0] if bi in street_of else "#bdbdbd"
         for p in polys(g):
             d.polygon(xy(p.exterior.coords), fill=col if bi in street_of else "#dddddd", outline=col)
     for a in addrs:
         x, y = (a["X"] - x0) * k, (y1 - a["Y"]) * k
-        col = "#999999" if a["ctx"] else config.COLORS[a["s"]][0]
+        col = streets[a["s"]]["colors"][0]
         d.ellipse([x - 4, y - 4, x + 4, y + 4], fill=col, outline="#000000")
         d.text((x + 5, y - 6), f"{a['n']}{a['rep']}", fill="#000000")
     for st in streets:  # étiquettes : trait dans l'orientation du texte

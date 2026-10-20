@@ -195,7 +195,16 @@ npx playwright test                                 # tests (serveur lancé par 
   - `js/views/control.js` (squelette) : faites / restantes / à repasser, barre de progression, détail par rue mis à jour en direct (`store.onChange`), export.
   - Rendu des lignes partagé dans `js/views/common.js`.
   - Tests : `tests/navigation.spec.js` (7 tests × 2 moteurs). Suite complète : 65 réussis, 1 ignoré ; navigation et GPS stables sur 3 répétitions.
-- [ ] **L2 — Commune entière**. Pipeline : toutes les voies, longueur par voie, contrôles adaptés (942 adresses). Couleurs par statut. Liste des rues avec recherche. Tests pilotés par les données (fin du 229 codé en dur).
+- [x] **L2 — Commune entière** ✅ (20/10/2026).
+  - Pipeline : toutes les voies ayant une adresse `entrée` → **941 adresses sur 90 voies**. Le 942e est un doublon BAN (« 2 Impasse Privée des Capucins », même id, à 25 m) : on garde la première occurrence, et le build le signale.
+  - Rue `s` = rang alphabétique sans accents (`street_sort_key`). Contrôle des totaux (`EXPECTED_ADDRESSES`, `EXPECTED_STREETS`). Plus de numéros de contexte (`ctx` toujours `false`, champ gardé pour compatibilité).
+  - **Tournées prédéfinies** : `config.PRESETS` → `addresses.json` `presets: [{id, name, ids}]`. Les 10 rues de la v0.1 = preset `default` (229 ids, comptes par rue vérifiés comme avant). C'est l'id de la tournée par défaut de l'app : la progression déjà saisie s'y rattachera en L3.
+  - **Couleurs** : `PALETTE` de 8 teintes sans vert ni orange (réservés aux statuts). Coloration gloutonne des rues voisines (tracés à moins de 30 m, `geo.neighbor_colors`) : 0 paire de voisines de même couleur, jusqu'à 25 voisines par rue.
+  - `streets[].len` : longueur de l'arbre couvrant des adresses (m), pour la charge en L4. 20,8 km au total.
+  - Cadre 2060 × 3200 m. 2773 parcelles, 2151 bâtiments. 874 adresses liées à un bâtiment, 67 sans (base du contrôle « adresses manquantes » en L4). `addresses.json` 161 Ko, `plan.json` 670 Ko. Build en 7 s avec le cache.
+  - App : légende devenue liste des rues **avec recherche** (sans accents ni casse ; Ctrl+Z dans le champ n'annule pas la progression), recherche aussi dans Préparer. Champs à 16 px (sinon iOS zoome) et sélectionnables malgré `user-select: none`.
+  - Tests pilotés par les données (`total()`, `STREET` recherché par nom). 69 réussis, 1 ignoré.
+  - **Perf** (WebKit Windows, rendu logiciel) : environ 220 ms par image de zoom contre 170 ms pour `main` (229 adresses), soit +30 à 50 %. Acceptable à Neyron. Pour Lyon 3e (milliers de numéros), il faudra ne dessiner que ce qui est à l'écran ou passer au canvas.
 - [ ] **L3 — Tournées**. IndexedDB v2 et migration (la tournée `default` et sa progression sont conservées). Créer, renommer, archiver, choisir la tournée active. Sélection par rue entière, côté pair / impair, plage de numéros ou numéro par numéro. Hors tournée active : en gris, non pointable.
 - [ ] **L4 — Préparer**. Ordre des rues fixé à la main. Charge estimée (adresses, mètres, durée paramétrable). Adresses manquantes ou sans bâtiment. Import d'un secteur (CSV `voie;début;fin;côté`).
 - [ ] **L5 — Distribuer**. Distribué / anomalie + motif en 2 taps, rue entière. « Reprendre » : prochaine adresse non traitée dans l'ordre de la tournée. Gros boutons à une main.
@@ -277,6 +286,8 @@ L'index sert d'identifiant de rue et de couleur (clair / sombre).
 | 9 | Montée des Écoles | 9 | #5f7d0e / #a9cc4a |
 
 **229 numéros à pointer** (comptes vérifiés dans la BAN le 19/10/2026).
+
+> **Branche facteur (L2)** : l'app couvre **toute la commune** (941 adresses, 90 voies, ordre alphabétique, couleurs par voisinage). Ces 10 voies forment la tournée prédéfinie `default` (`config.PRESETS`, mêmes comptes vérifiés). Le tableau ci-dessus décrit la v0.1 (`main`).
 
 - « Impasse de la Gare » n'existe pas dans la BAN ; ses maisons sont probablement numérotées sur la Rue de la Gare.
 - **Route de Genève** : 138 numéros dans la BAN, numérotation croissante d'est en ouest (n° 3 → 193). Seul le tronçon **58 → 193, côtés pair et impair**, est dans la tournée (confirmé, §14). Les n° < 58 qui tombent dans le cadre sont affichés **en gris**, comme repères, **non pointables** (`ctx: true`).
@@ -384,7 +395,9 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   "frame": { "x0": 0, "y1": 0, "W": 1570, "H": 1678 },     // Lambert-93, mètres
   "affine": { "x": [a, b, c], "y": [d, e, f], "maxResidual_m": 0.08 },
   "streets": [ { "i": 0, "name": "Montée Neuve", "colors": ["#1d5fd1", "#6ea2ff"], "count": 58,
+                 "len": 812,                                                // branche facteur : longueur (m)
                  "labels": [ { "x": 895.4, "y": 806.1, "a": -81 } ] } ],   // a : angle en degrés, SVG
+  "presets": [ { "id": "default", "name": "Neyron — 10 rues", "ids": ["01275_…", …] } ],  // branche facteur
   // addresses triées par rue, numéro, rep ; "bat" vaut null si aucun bâtiment n'est associé
   "addresses": [
     { "id": "01275_xxxx_00012", "s": 2, "n": 12, "rep": "", "side": "pair",
@@ -548,6 +561,8 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **Pointer capture** : un `setPointerCapture` dans `pointerdown` redirige le `click` vers le `<svg>` et les numéros ne réagissent plus. Capturer seulement après 4 px de mouvement.
 - **`hidden` et `all: unset`** : `all: unset` sur les boutons annule `hidden`. Ajouter `[hidden]{display:none!important}`.
 - **Couleurs** sur 6 chiffres (`#888` mal interprété a déjà donné du bleu marine avec reportlab).
+- **Doublons BAN** : une adresse peut figurer deux fois avec le même `id` (deux entrées, ex. 2 Impasse Privée des Capucins). L'id étant la clé de progression, le pipeline garde la première occurrence et le signale.
+- **Champs de saisie sur iOS** : police d'au moins 16 px, sinon Safari zoome la page au focus. Et `user-select: text` sur le champ, puisque le `body` est en `user-select: none`.
 - **Pas de serveur LAN** : le SW ne doit jamais attendre le réseau pour servir l'app.
 - **iPhone sur `http://<IP du PC>:8000`** : ce n'est pas un contexte sécurisé. Safari y **refuse la localisation sans rien demander** (erreur « refusée », quels que soient les réglages), et il n'y a ni service worker ni Wake Lock. Seule l'interface se teste ainsi ; le GPS exige HTTPS (GitHub Pages). L'app l'annonce désormais (`isSecureContext`) et le panneau debug affiche « contexte sécurisé ».
 - **Chemins** absolus (`/js/…`) cassés sous `/<repo>/`.
@@ -699,3 +714,8 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
 - **19/10/2026** — Carte de Cottance abandonnée : pas nécessaire pour valider le GPS. Prochaine session : mode préparation de tournée sur toute la commune, avec itinéraire le plus court (§12 A). Plus tard : carte de Lyon 3e autour de la gare Part-Dieu (§12 B).
 - **20/10/2026** — Branche `dev_tracking_tournee_laposte` : l'app évolue vers la distribution du courrier (préparer / distribuer / contrôler), avec une barre d'onglets en bas, sobre. Pas d'itinéraire calculé pour l'instant. Plan et limites d'architecture en §2 bis. Plan validé par l'utilisateur.
 - **20/10/2026** — L1 : vues Préparer et Contrôler posées par-dessus la carte plutôt que de la masquer. Avec `display: none`, la carte aurait une taille nulle (cadrages faux, suivi GPS cassé), et Préparer réutilisera la carte pour la sélection (L3). Distribuer est l'onglet par défaut.
+- **20/10/2026** — L2 : toute la commune (941 adresses, 90 voies).
+  - Les 10 rues deviennent la tournée prédéfinie `default`.
+  - Couleurs : plutôt qu'une couleur unique, une palette de 8 teintes attribuée par voisinage, pour savoir à quelle rue appartient un numéro près d'un carrefour. Le vert et l'orange restent réservés aux statuts.
+  - Rues triées par ordre alphabétique et cherchables.
+  - Doublon BAN : on garde la première occurrence.
