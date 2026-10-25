@@ -7,7 +7,8 @@
 //          ids = composition (adresses de la tournée) ; order / reverse = ordre de passage et rues parcourues
 //          en numéros décroissants, par clé de voie BAN (tourplan.js) ; closures = passages clôturés
 //          [{at, start, n, done, again, todo, anomalies: {motif: n}}] (bilan agrégé, sans détail par adresse)
-// meta   : {key, value}  deviceId, seq, activeTour, dataVersion, persistAsked, persist
+// meta   : {key, value}  deviceId, seq, activeTour, dataVersion, persistAsked, persist,
+//          tags = repères par adresse {id: {c: [codes], note?, at}} (liste fermée TAGS, note courte facultative)
 //
 // La progression est propre à chaque tournée (champ `tour` des événements). Changer la composition
 // n'efface rien : une adresse retirée puis remise retrouve son statut. Clôturer un passage pose une borne
@@ -38,6 +39,24 @@ export const REASONS = [
 export const REASON_CODES = REASONS.map((r) => r.code);
 export const reasonLabel = (code) => REASONS.find((r) => r.code === code)?.label || 'Motif inconnu';
 export const isTreated = (st) => st === ST_DONE || st === ST_ANOMALY;  // distribuée, ou anomalie signalée
+
+// repères d'adresse (alerte pendant la tournée) : liste fermée, plus une note courte facultative. Ils concernent des
+// foyers identifiables (RGPD, CLAUDE.md §13) : rien sur les personnes, aucun code d'accès ; jamais dans le rapport.
+export const TAGS = [
+  { code: 'chien', label: 'Chien' },
+  { code: 'boite', label: 'Boîte déplacée ou cachée' },
+  { code: 'portail', label: 'Portail ou sonnette' },
+  { code: 'acces', label: 'Accès difficile' },
+  { code: 'main', label: 'Remise en main propre fréquente' },
+  { code: 'stationnement', label: 'Stationnement difficile' },
+  { code: 'danger', label: 'Danger' },
+  { code: 'autre', label: 'Autre' },
+];
+export const TAG_CODES = TAGS.map((t) => t.code);
+export const TAG_NOTE_MAX = 60;
+export const tagLabel = (code) => TAGS.find((t) => t.code === code)?.label || 'Repère';
+// note nettoyée : une ligne, sans caractères de contrôle, 60 caractères au plus
+export const cleanNote = (s) => String(s ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, TAG_NOTE_MAX);
 // conservation du détail d'un passage clôturé (pointages horodatés) : 2 mois, durée recommandée par la CNIL
 // pour les données de suivi d'activité d'un salarié (choix de l'utilisateur, 25/10/2026)
 export const RETENTION_DAYS = 60;
@@ -330,6 +349,32 @@ export class Store {
     return true;
   }
 
+  // ---------------------------------------------------------------- repères
+
+  get tags() {
+    return this.meta.tags || {};
+  }
+
+  tagsOf(id) {
+    return this.tags[id] || null;
+  }
+
+  // codes de la liste fermée et note facultative ; rien de coché ni de noté : le repère est supprimé
+  async setTags(id, codes, note = '') {
+    const c = TAG_CODES.filter((k) => codes.includes(k));
+    const n = cleanNote(note);
+    const next = { ...this.tags };
+    if (c.length || n) next[id] = { c, ...(n ? { note: n } : {}), at: Date.now() };
+    else delete next[id];
+    await this._save({ tags: next });  // écrire d'abord
+    this._emit({ type: 'tags', id });
+  }
+
+  async clearTags() {
+    await this._save({ tags: {} });
+    this._emit({ type: 'tags', id: null });
+  }
+
   onChange(fn) {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
@@ -433,6 +478,7 @@ export class Store {
       dataVersion: this.meta.dataVersion || null,
       tours: this.tours,
       events: this.allEvents,
+      tags: this.tags,
     };
   }
 
@@ -456,8 +502,11 @@ export class Store {
 
   // fusion d'événements et de tournées déjà validés : événements en ajout seul (dédoublonnage sur
   // [dev, seq]) ; une tournée connue est remplacée si la version importée est plus récente (updatedAt)
-  async merge(events, tours = []) {
+  async merge(events, tours = [], tags = {}) {
     const added = this.newEvents(events);
+    // repères : le plus récent l'emporte, adresse par adresse
+    const localTags = this.tags;
+    const newTags = Object.entries(tags).filter(([id, t]) => (t.at || 0) > (localTags[id]?.at || 0));
     // sauvegarde v0.1 : une tournée sans composition reçoit celle du preset de même id (même migration qu'au
     // démarrage) ; elle ne remplace jamais une tournée connue (updatedAt absent = 0)
     tours = tours.map(({ legacy, ...t }) => {
@@ -470,8 +519,10 @@ export class Store {
       return local && (t.updatedAt || 0) > (local.updatedAt || 0);
     });
     const ownMax = maxSeq(added, this.deviceId);
-    if (this.db && (added.length || newTours.length || updated.length)) {
+    const mergedTags = newTags.length ? { ...localTags, ...Object.fromEntries(newTags) } : null;
+    if (this.db && (added.length || newTours.length || updated.length || mergedTags)) {
       await transact(this.db, ['events', 'tours', 'meta'], 'readwrite', (tx) => {
+        if (mergedTags) tx.objectStore('meta').put({ key: 'tags', value: mergedTags });
         for (const e of added) tx.objectStore('events').add(e);
         for (const t of newTours) tx.objectStore('tours').add(t);
         for (const t of updated) tx.objectStore('tours').put(t);
@@ -480,6 +531,7 @@ export class Store {
       });
     }
     if (ownMax > this.seq) this.seq = this.meta.seq = ownMax;
+    if (mergedTags) this.meta.tags = mergedTags;
     for (const e of added) this.allEvents.push(e);
     this.tours.push(...newTours);
     for (const t of updated) Object.assign(this.tours.find((x) => x.id === t.id), t);
@@ -488,7 +540,7 @@ export class Store {
     const kept = new Set(this.allEvents);
     this._reload();
     const result = { type: 'import', added: added.filter((e) => kept.has(e)).length, duplicates: events.length - added.length,
-      tours: newTours.length + updated.length };
+      tours: newTours.length + updated.length, tags: newTags.length };
     this._emit(result);
     return result;
   }

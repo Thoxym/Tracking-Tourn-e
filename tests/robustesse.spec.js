@@ -264,6 +264,9 @@ test.describe('ergonomie', () => {
     await page.click('#sheet-actions [data-st="anomalie"]');
     expect(await audit(), 'choix du motif').toEqual([]);
     await page.click('#reason-dialog button[value="cancel"]');
+    await page.click('#btn-sheet-tag');
+    expect(await audit(), 'repère').toEqual([]);
+    await page.click('#tag-dialog button[value="cancel"]');
     await page.click('#btn-sheet-close');
     await page.click('#btn-locate');
     await page.click('#btn-locate');  // GPS arrêté
@@ -273,7 +276,7 @@ test.describe('ergonomie', () => {
 
     await openPage(page, 'prepare', '#prep-tour-row');
     expect(await audit(), 'Préparer : tournées').toEqual([]);
-    for (const row of ['#prep-order-row', '#prep-checks-row', '#prep-settings-row', '#prep-streets-row']) {
+    for (const row of ['#prep-order-row', '#prep-checks-row', '#prep-tags-row', '#prep-settings-row', '#prep-streets-row']) {
       await openPage(page, 'prepare', row);
       expect(await audit(), `Préparer : ${row}`).toEqual([]);
     }

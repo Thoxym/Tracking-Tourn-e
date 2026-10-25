@@ -95,6 +95,7 @@
               <p id="next-pos" class="caption"></p>
               <h2 id="next-title" class="next-title"></h2>
               <p id="next-sub" class="sub"></p>
+              <p id="next-tags" class="tag-line" hidden></p>
               <div id="next-body">
                 <div class="next-actions">
                   <button id="next-anomaly" class="act act-anomalie" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2L3 19.5h18z"/><path d="M12 10v4.4M12 16.9v.3"/></svg>Anomalie</button>
@@ -165,6 +166,12 @@
                 <span class="row-icon bg-orange"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
                 <span class="row-main"><span class="row-title">Vérifications</span></span>
                 <span id="prep-checks-n" class="row-value"></span>
+                <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>
+              </button>
+              <button id="prep-tags-row" class="row nav-row" type="button" data-push="tags">
+                <span class="row-icon bg-red"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11.6V4.8a1.3 1.3 0 0 1 1.3-1.3h6.8l8.9 8.9-8.1 8.1z"/><circle cx="8.2" cy="8.2" r="1.4"/></svg></span>
+                <span class="row-main"><span class="row-title">Repères</span></span>
+                <span id="prep-tags-n" class="row-value"></span>
                 <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>
               </button>
               <button id="prep-settings-row" class="row nav-row" type="button" data-push="settings">
@@ -310,6 +317,16 @@
               </div>
               <button id="route-pick-cancel" class="btn tinted" type="button">Annuler</button>
             </div>
+          </div>
+        </div>
+
+        <div class="page" data-page="tags" hidden>
+          <header class="nav"><button class="nav-back" type="button" data-back>Préparer</button><h1 class="nav-title small">Repères</h1></header>
+          <div class="page-body">
+            <p id="tags-empty" class="foot first" hidden>Aucun repère. Touchez une adresse sur le plan, puis l'étiquette en haut de sa fiche.</p>
+            <ul id="tags-list" class="group"></ul>
+            <p class="foot">Une alerte s'affiche quand la tournée arrive à une adresse repérée. Les repères restent sur cet appareil, voyagent avec la sauvegarde et n'apparaissent jamais dans le rapport. Ils concernent des foyers : ne notez rien sur les personnes, aucun code d'accès, et supprimez ceux qui ne servent plus.</p>
+            <button id="tags-clear" class="btn tinted danger-tint wide" type="button">Supprimer tous les repères</button>
           </div>
         </div>
 
@@ -493,7 +510,11 @@
             <div class="nav-titles">
               <h1 id="sheet-title" class="nav-title"></h1>
               <p class="nav-sub"><span id="sheet-status" class="badge"></span> <span id="sheet-sub"></span></p>
+              <p id="sheet-tags" class="tag-line" hidden></p>
             </div>
+            <button id="btn-sheet-tag" class="close-btn tag-btn" type="button" aria-label="Repère" title="Repère">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11.6V4.8a1.3 1.3 0 0 1 1.3-1.3h6.8l8.9 8.9-8.1 8.1z"/><circle cx="8.2" cy="8.2" r="1.4"/></svg>
+            </button>
             <button id="btn-sheet-close" class="close-btn" type="button" aria-label="Fermer">
               <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 7.5l9 9M16.5 7.5l-9 9"/></svg>
             </button>
@@ -581,6 +602,34 @@
         <button class="as-cancel glass" type="submit" value="cancel" autofocus>Annuler</button>
       </form>
     </dialog>
+
+    <!-- repère d'une adresse : liste fermée + note courte -->
+    <dialog id="tag-dialog" class="action-sheet" aria-labelledby="tag-title">
+      <form method="dialog">
+        <div class="as-group glass">
+          <div class="as-head">
+            <h2 id="tag-title"></h2>
+            <p>Repère : une alerte s'affichera pendant la tournée</p>
+          </div>
+          <div id="tag-options" class="tag-options"></div>
+          <div class="tag-note">
+            <input id="tag-note" class="field" type="text" maxlength="60" placeholder="Note (facultative)" autocomplete="off" enterkeyhint="done" aria-label="Note du repère" aria-describedby="tag-warn">
+            <p id="tag-warn" class="tag-warn">Rien sur les personnes, aucun code d'accès.</p>
+          </div>
+          <button id="tag-remove" class="as-btn destructive" type="submit" value="remove">Supprimer le repère</button>
+          <button id="tag-save" class="as-btn strong" type="submit" value="save">Enregistrer</button>
+        </div>
+        <button class="as-cancel glass" type="submit" value="cancel">Annuler</button>
+      </form>
+    </dialog>
+
+    <div id="tag-alert" class="banner glass tag-alert" hidden role="alert">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11.6V4.8a1.3 1.3 0 0 1 1.3-1.3h6.8l8.9 8.9-8.1 8.1z"/><circle cx="8.2" cy="8.2" r="1.4"/></svg>
+      <span id="tag-alert-msg"></span>
+      <button id="tag-alert-close" class="close-btn" type="button" aria-label="Fermer l'alerte">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 7.5l9 9M16.5 7.5l-9 9"/></svg>
+      </button>
+    </div>
 
     <!-- alerte avec saisie -->
     <dialog id="prompt" class="alert glass">

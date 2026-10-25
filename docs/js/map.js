@@ -69,6 +69,10 @@ export class MapView {
     this.lLabels = layer('l-labels');
     const lDots = layer('l-dots');
     this.lNumbers = layer('l-numbers');
+    this.lTags = layer('l-tags');
+    this.tagRing = el('path', { class: 'tag-ring' }, this.lTags);
+    this.tagDot = el('path', { class: 'tag-dot' }, this.lTags);
+    this.tagged = [];
     this.lRouteStops = layer('l-route-stops');
     this.lSelect = layer('l-select');
     this.lGps = layer('l-gps');
@@ -254,6 +258,7 @@ export class MapView {
     const ls = clamp(12 / k, 2.6, 22);
     this.lLabels.style.fontSize = `${ls}px`;
     this.lRouteStops.style.fontSize = `${11 / k}px`;
+    this._updateTags();
     this.svg.classList.toggle('z-low', k < K_NUMBERS);
     this.svg.classList.toggle('z-min', k < K_LABELS);
     this._updateRing();
@@ -430,6 +435,19 @@ export class MapView {
       el('path', { class: 'route-stop-dot', d: dot }, g);
       el('text', { class: 'route-stop-num', x: s.x, y: s.y }, g).textContent = s.label;
     }
+  }
+
+  // repères d'adresse : pastille à côté du numéro (décalage constant à l'écran, recalculé au zoom)
+  setTags(points) {
+    this.tagged = points;
+    this._updateTags();
+  }
+
+  _updateTags() {
+    const off = 10 / this.k;
+    const d = this.tagged.map((p) => `M${(p.x + off).toFixed(2)} ${(p.y - off).toFixed(2)}h0.01`).join('');
+    this.tagRing.setAttribute('d', d);
+    this.tagDot.setAttribute('d', d);
   }
 
   // repère sur un point à vérifier (bâtiment sans adresse, numéro hors tournée) ; null pour l'effacer

@@ -531,7 +531,29 @@ Pourquoi pas Dijkstra seul : il donne le plus court chemin entre deux points. L'
     - itinéraire importé validé champ par champ.
 
     Audit des cibles de 44 px étendu aux pages Itinéraire, Réglages, Arrêts et à la feuille d'actions.
-- [ ] **I4 — Repères** : `store.TAGS`, `meta.tags`, fiche d'adresse, page Repères, icônes sur le plan, alertes.
+- [x] **I4 — Repères** ✅ (25/10/2026).
+  - **Liste fermée** `store.TAGS` : chien, boîte déplacée ou cachée, portail ou sonnette, accès difficile, remise en main propre fréquente, stationnement difficile, danger, autre.
+  - **Note facultative** : 60 caractères au plus, nettoyée par `cleanNote` (une ligne, sans caractères de contrôle). Avertissement sous le champ : « Rien sur les personnes, aucun code d'accès. »
+  - **Stockage par adresse**, pas par tournée : `meta.tags = {id: {c, note?, at}}`. `store.setTags` écrit d'abord ; rien de coché ni de noté supprime le repère ; `clearTags`.
+  - **Sauvegarde** : `tags` dans l'export. À l'import, `io.validTags` garde seulement les codes de la liste, nettoie et borne la note ; une entrée vide est écartée. À la fusion, le repère le plus récent l'emporte, adresse par adresse. La confirmation compte les repères.
+  - **Jamais dans le rapport.**
+  - **Interface** :
+    - **fiche d'adresse** : bouton étiquette en haut (rond, à côté de Fermer), ligne orange « Chien · Portail ou sonnette — boîte derrière le garage » ;
+    - **saisie** : feuille `#tag-dialog`, avec les 8 repères en pastilles à cocher sur deux colonnes, le champ de note, Enregistrer et Supprimer. Entrée dans la note enregistre, et ne déclenche pas « Supprimer », premier bouton du formulaire (§10) ;
+    - **plan** : pastille orange à côté du numéro (calque `l-tags`, un seul chemin, décalage constant à l'écran recalculé au zoom) ;
+    - **Distribuer** : ligne orange sur la carte « prochaine adresse » ;
+    - **Préparer › Repères** (`js/views/tags.js`) : toutes les adresses repérées avec leur date, un toucher modifie, mention RGPD, « Supprimer tous les repères ».
+  - **Alerte** (`js/tag-alerts.js`, `TagAlerts`) : bandeau orange en verre en haut de l'écran, 8 s, avec Fermer.
+    - Déclenchement : la prochaine adresse (ou l'arrêt courant, I5) devient une adresse repérée, mais pas au lancement de l'app ; ou la position GPS passe à moins de 50 m d'une adresse repérée de la tournée non traitée (précision ≤ 30 m).
+    - Une même adresse n'est pas réannoncée avant 15 min.
+    - `onAlert(fn)` : la voix s'y abonnera (I6).
+  - **Tests** (`tests/reperes.spec.js`) :
+    - saisie depuis la fiche, affichage (fiche, plan, page), modification depuis la liste, note bornée, Entrée, relance, suppression ;
+    - alerte sur la prochaine adresse, « Tout supprimer » ;
+    - alerte de proximité GPS, une seule fois ;
+    - export avec les repères, rapport CSV sans repère, import sur un autre appareil avec repères piégés nettoyés.
+
+    Audit des cibles de 44 px étendu à la fenêtre de saisie et à la page Repères.
 - [ ] **I5 — Navigation** : choix de la tournée et « Démarrer » dans Distribuer, arrêt courant, bandeau de consigne, tracé, recalcul hors itinéraire.
 - [ ] **I5 bis — Simulation** : même vue, position simulée le long du tracé, pause, ×1 à ×8, arrêt précédent / suivant, sans écrire dans le journal.
 - [ ] **I6 — Voix et carte orientée** : `speechSynthesis`, rotation de la carte, repli « nord en haut ».
@@ -649,6 +671,7 @@ neyron-tournees/
 │   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js,
 │   │                     #   tabs.js, sheet.js, tourplan.js, report.js, views/ (prepare.js, distribute.js, control.js, common.js) — branche facteur
 │   │                     #   routing.js, itinerary.js, route-worker.js, route-client.js, roads.js, views/route.js — itinéraire (§2 quater)
+│   │                     #   tag-alerts.js, views/tags.js — repères d'adresse
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, roads.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
@@ -938,6 +961,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   - Un onglet retrouve la page où on l'avait laissé : `openPage` retouche l'onglet pour revenir à la page principale.
 - **Captures sous WebKit (Windows)** : les animations CSS y sont lentes, une capture peut tomber en pleine entrée de page ou de dialogue (page blanche, dialogue à moitié transparent). Capturer avec `reducedMotion: 'reduce'`, comme les tests. Ce WebKit **ne dessine pas** `backdrop-filter` (le plan reste net sous le verre) : le flou ne se juge que sur l'iPhone, d'où des matériaux assez opaques pour rester lisibles sans flou.
 - **Machine chargée** (navigateur de l'utilisateur ouvert, `com.docker.llama-server` actif) : des démarrages de l'app sous WebKit dépassent 15 s, sans rapport avec le code (un essai sans flou a donné plus d'échecs ; les tests relancés seuls passent). `waitReady` attend donc 30 s. Lancer avec `--workers=3` à `5` pour distinguer les vrais échecs (25/10/2026, après I2 : 5 workers → quelques tests WebKit réussis au second essai ; WebKit seul avec 3 workers → 66/66).
+- **Port 8100 = serveur des tests** : Playwright le démarre et l'arrête. Pour voir l'app en local, servir `docs/` sur le port 8000 (`python -m http.server -d docs 8000 --bind 127.0.0.1`), puis « Recharger » sur le bandeau (le service worker sert d'abord la version en cache).
 - **Séparateurs des listes groupées** : `.group > * + *::before` dessine le trait fin ; un enfant direct ne peut donc pas utiliser son propre `::before` (pastille de couleur de l'ordre de passage : élément `.order-dot`).
 - **`<dialog>` en bas d'écran** : les styles du navigateur centrent un dialogue modal et bornent sa hauteur ; la feuille d'actions se place en `position: fixed; inset: auto 0 0 0`, sans `max-height`.
 - **Animations dans les tests** : mesurer un zoom après un délai fixe est instable sous WebKit chargé. Attendre la fin de l'animation (`map._anim` nul, `k` modifié).
@@ -1047,6 +1071,7 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
 | Historique des passages | fiche de tournée | comptes par passage, anomalies par motif | **agrégé**, sans détail par adresse ni heure |
 | Sauvegarde JSON | partagée à la main | tout le journal horodaté, identifiant d'appareil aléatoire | mention « à garder pour vous, ce n'est pas un rapport » |
 | Position GPS | mémoire seulement | — | jamais stockée ni exportée ; masquée dans le diagnostic copié |
+| Repères d'adresse (I4) | `meta.tags`, sur l'appareil ; sauvegarde | 8 codes fermés (« chien »…) et une note de 60 caractères au plus, par adresse | foyer identifiable : avertissement sous la note (rien sur les personnes, aucun code d'accès) ; **jamais dans le rapport** ; liste à revoir et « Tout supprimer » dans Préparer › Repères |
 | Préférences (`localStorage`) | appareil | thème, onglet, réglages de charge, reprise, heures du rapport | aucune donnée personnelle |
 
 - Aucun flux réseau nouveau : CSP inchangée, aucun service tiers, tout reste sur l'appareil.
@@ -1168,3 +1193,8 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - Réglages chiffrés propres à chaque mode (passer de la voiture au vélo ne mélange pas les valeurs).
   - Une fois calculé, le résultat passe en tête de la page Itinéraire et sert de petit cran.
   - Le tracé n'est montré que dans les pages de l'itinéraire, pour ne pas charger Distribuer avant la navigation (I5).
+- **25/10/2026** — Commit `9c7eeb3` (I3). I4 :
+  - repères par adresse plutôt que par tournée (le chien est le même quelle que soit la tournée) ;
+  - à la fusion, le plus récent l'emporte ; une suppression ne se propage pas d'un appareil à l'autre ;
+  - alerte sur la prochaine adresse et à moins de 50 m au GPS, pas plus d'une fois par quart d'heure pour une même adresse ;
+  - saisie en pastilles sur deux colonnes, pour tenir à l'écran avec la note.

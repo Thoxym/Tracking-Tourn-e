@@ -1,7 +1,9 @@
 // Interface autour du plan : rues de la tournée et progression, pointage, annulation, barre d'échelle, thème,
 // fiche d'adresse (page de la feuille), toasts, alertes, choix du motif (feuille d'actions).
 
-import { REASONS, ST_AGAIN, ST_ANOMALY, ST_DONE, ST_TODO, isTreated, reasonLabel } from './store.js';
+import {
+  REASONS, ST_AGAIN, ST_ANOMALY, ST_DONE, ST_TODO, TAGS, TAG_NOTE_MAX, isTreated, reasonLabel, tagLabel,
+} from './store.js';
 import { sequence, streetKeys, streetOrder } from './tourplan.js';
 import { anomalyCount, fold, setAnomalyCount } from './views/common.js';
 
@@ -380,6 +382,9 @@ export class UI {
       });
     }
     this._buildReasons();
+    this._buildTags();
+    $('btn-sheet-tag').addEventListener('click', () => { if (this.sheetAddress) this.editTags(this.sheetAddress); });
+    this.store.onChange((d) => { if (d?.type === 'tags' && this.sheetAddress) this._fillSheet(this.sheetAddress); });
     $('toast-action').addEventListener('click', () => {
       $('toast').hidden = true;
       const action = this._toastAction;
@@ -449,6 +454,84 @@ export class UI {
     badge.className = `badge st-${st}`;
     // seules les actions qui changent le statut sont proposées (anomalie : toujours, pour changer de motif)
     for (const b of $('sheet-actions').querySelectorAll('.act')) b.hidden = b.dataset.st === st && st !== ST_ANOMALY;
+    const tags = this.tagText(a.id);
+    $('sheet-tags').hidden = !tags;
+    $('sheet-tags').textContent = tags;
+    $('btn-sheet-tag').setAttribute('aria-pressed', String(Boolean(tags)));
+    $('btn-sheet-tag').setAttribute('aria-label', tags ? 'Modifier le repère' : 'Ajouter un repère');
+  }
+
+  // ------------------------------------------------------------ repères
+
+  // « Chien · Portail ou sonnette — boîte derrière le garage », ou '' sans repère
+  tagText(id) {
+    const t = this.store.tagsOf(id);
+    if (!t) return '';
+    const labels = t.c.map(tagLabel).join(' · ');
+    return [labels, t.note].filter(Boolean).join(labels && t.note ? ' — ' : '');
+  }
+
+  _buildTags() {
+    const SVGNS = 'http://www.w3.org/2000/svg';
+    $('tag-options').replaceChildren(...TAGS.map(({ code, label }) => {
+      const l = document.createElement('label');
+      l.className = 'tag-opt';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.value = code;
+      const span = document.createElement('span');
+      span.textContent = label;
+      const svg = document.createElementNS(SVGNS, 'svg');
+      svg.setAttribute('class', 'ico');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('aria-hidden', 'true');
+      const p = document.createElementNS(SVGNS, 'path');
+      p.setAttribute('d', 'M5 12.5l4.5 4.5L19 7.5');
+      svg.append(p);
+      l.append(input, span, svg);
+      return l;
+    }));
+    $('tag-note').maxLength = TAG_NOTE_MAX;
+    // Entrée dans la note : enregistrer (sinon le premier bouton du formulaire, « Supprimer », serait déclenché)
+    $('tag-note').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        $('tag-dialog').close('save');
+      }
+    });
+  }
+
+  // saisie du repère d'une adresse ; renvoie true s'il a changé
+  editTags(a) {
+    const dlg = $('tag-dialog');
+    const cur = this.store.tagsOf(a.id);
+    $('tag-title').textContent = addressLabel(a, this.streets);
+    for (const input of $('tag-options').querySelectorAll('input')) input.checked = Boolean(cur?.c.includes(input.value));
+    $('tag-note').value = cur?.note || '';
+    $('tag-remove').hidden = !cur;
+    dlg.returnValue = '';
+    return new Promise((resolve) => {
+      dlg.addEventListener('close', async () => {
+        const v = dlg.returnValue;
+        try {
+          if (v === 'save') {
+            const codes = [...$('tag-options').querySelectorAll('input:checked')].map((i) => i.value);
+            await this.store.setTags(a.id, codes, $('tag-note').value);
+            const now = this.tagText(a.id);
+            this.toast(now ? `Repère enregistré : ${now}` : 'Repère supprimé');
+            resolve(true);
+          } else if (v === 'remove') {
+            await this.store.setTags(a.id, [], '');
+            this.toast('Repère supprimé');
+            resolve(true);
+          } else resolve(false);
+        } catch (err) {
+          this.toast(`Enregistrement impossible : ${err.message}`, { ms: 6000 });
+          resolve(false);
+        }
+      }, { once: true });
+      dlg.showModal();
+    });
   }
 
   // ------------------------------------------------------ motif d'anomalie
@@ -464,7 +547,6 @@ export class UI {
     }));
   }
 
-  // motif choisi (code) ou null si annulé ; le motif actuel est mis en avant
   // Feuille d'actions : items [{label, value, destructive?, checked?}] ; renvoie la valeur choisie, ou null
   actionSheet(title, items, { message = '' } = {}) {
     const dlg = $('action-sheet');
@@ -490,6 +572,7 @@ export class UI {
     });
   }
 
+  // motif choisi (code) ou null si annulé ; le motif actuel est mis en avant
   pickReason(a) {
     const dlg = $('reason-dialog');
     const current = this.store.status(a.id) === ST_ANOMALY ? this.store.reason(a.id) : null;

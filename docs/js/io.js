@@ -1,7 +1,7 @@
 // Sauvegarde : export JSON de la progression (feuille de partage iOS, sinon téléchargement) et import
 // par fusion. Un fichier importé est une donnée non fiable : validé champ par champ, champs inconnus retirés.
 
-import { BACKUP_SCHEMA, REASON_CODES, STATUSES, ST_ANOMALY } from './store.js';
+import { BACKUP_SCHEMA, REASON_CODES, STATUSES, ST_ANOMALY, TAG_CODES, cleanNote } from './store.js';
 import { LIMITS, MODES, WEAVE } from './itinerary.js';
 import { reportFileName } from './report.js';
 
@@ -123,6 +123,21 @@ export function validTour(t) {
   };
 }
 
+// repères : codes de la liste fermée, note nettoyée et bornée ; adresse inconnue gardée (autre plan)
+const MAX_TAGS = 20000;
+export function validTags(obj) {
+  const out = {};
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return out;
+  for (const [id, t] of Object.entries(obj).slice(0, MAX_TAGS)) {
+    if (!isStr(id, 64) || !t || typeof t !== 'object') continue;
+    const c = Array.isArray(t.c) ? TAG_CODES.filter((k) => t.c.includes(k)) : [];
+    const note = typeof t.note === 'string' ? cleanNote(t.note) : '';
+    if (!c.length && !note) continue;
+    out[id] = { c, ...(note ? { note } : {}), at: isTime(t.at) ? t.at : 0 };
+  }
+  return out;
+}
+
 export function parseBackup(text) {
   let obj;
   try {
@@ -156,6 +171,7 @@ export function parseBackup(text) {
     schema: obj.schema,
     events,
     tours,
+    tags: validTags(obj.tags),
     invalid,
     deviceId: isStr(obj.deviceId, 64) ? obj.deviceId : null,
     exportedAt: isStr(obj.exportedAt, 40) ? obj.exportedAt : null,
@@ -248,7 +264,9 @@ export class BackupController {
         return !local || (t.updatedAt || 0) > (local.updatedAt || 0);
       });
       const skipped = backup.invalid ? ` ${plural(backup.invalid, 'entrée invalide ignorée', 'entrées invalides ignorées')}.` : '';
-      if (!fresh.length && !changedTours.length) {
+      const localTags = this.store.tags;
+      const newTags = Object.entries(backup.tags).filter(([id, t]) => t.at > (localTags[id]?.at || 0)).length;
+      if (!fresh.length && !changedTours.length && !newTags) {
         this.ui.toast(`Rien à importer : ${plural(backup.events.length, 'événement déjà présent', 'événements déjà présents')}.${skipped}`, { ms: 5000 });
         return;
       }
@@ -258,13 +276,15 @@ export class BackupController {
       const from = backup.deviceId === this.store.deviceId ? 'cet appareil' : `appareil ${backup.deviceId ? backup.deviceId.slice(0, 6) : 'inconnu'}`;
       const unknown = new Set(fresh.flatMap((e) => e.ids).filter((id) => !this.map.byId.has(id))).size;
       const names = changedTours.slice(0, 3).map((t) => `« ${t.name} »`).join(', ') + (changedTours.length > 3 ? '…' : '');
-      const tours = changedTours.length ? ` et ${plural(changedTours.length, 'tournée')} (${names})` : '';
+      const tours = (changedTours.length ? ` et ${plural(changedTours.length, 'tournée')} (${names})` : '')
+        + (newTags ? `, ${plural(newTags, 'repère')}` : '');
       const msg = `Fusionner ${plural(fresh.length, 'événement')}${tours} de la sauvegarde du ${when} (${from}) ? Rien n'est supprimé.${skipped}`
         + (unknown ? ` ${plural(unknown, 'adresse inconnue', 'adresses inconnues')} de ce plan (ignorées à l'affichage).` : '');
       if (!(await this.ui.confirm(msg, 'Importer'))) return;
-      const r = await this.store.merge(backup.events, backup.tours);
+      const r = await this.store.merge(backup.events, backup.tours, backup.tags);
       this.ui.toast(`${plural(r.added, 'événement ajouté', 'événements ajoutés')}${r.duplicates ? `, ${plural(r.duplicates, 'déjà présent', 'déjà présents')}` : ''}`
-        + (r.tours ? `, ${plural(r.tours, 'tournée ajoutée ou mise à jour', 'tournées ajoutées ou mises à jour')}` : ''), { ms: 5000 });
+        + (r.tours ? `, ${plural(r.tours, 'tournée ajoutée ou mise à jour', 'tournées ajoutées ou mises à jour')}` : '')
+        + (r.tags ? `, ${plural(r.tags, 'repère')}` : ''), { ms: 5000 });
     } catch (err) {
       this.ui.toast(`Import impossible : ${err.message}`, { ms: 6000 });
     } finally {

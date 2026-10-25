@@ -62,6 +62,9 @@ export class DistributeView {
     const moved = (a && a.id) !== (this.current && this.current.id);
     this.current = a;
     this._fill(a);
+    // la tournée arrive à une adresse repérée : alerte (pas au lancement de l'app)
+    if (moved && a && this._started) this.app.alerts?.alert(a);
+    this._started = true;
     if (panel) panel.layout();
     if (ui.sheetAddress || this.app.prepare?.selecting) return;
     map.selectAddress(a ? a.id : null);
@@ -81,6 +84,7 @@ export class DistributeView {
     const card = $('next-card');
     $('next-body').hidden = !a;
     $('next-end').hidden = Boolean(a);
+    if (!a) $('next-tags').hidden = true;
     if (!a) {
       const all = ui.order.flatMap((s) => ui.byStreet[s]);
       const done = all.filter((x) => store.status(x.id) === ST_DONE).length;
@@ -103,6 +107,9 @@ export class DistributeView {
     $('next-pos').textContent = `Prochaine adresse · ${where} · ${plural(left, 'numéro restant', 'numéros restants')}`;
     $('next-title').textContent = addressLabel(a, ui.streets);
     $('next-sub').textContent = [st === ST_AGAIN ? 'À repasser' : '', `côté ${a.side}`, a.ld].filter(Boolean).join(' · ');
+    const tags = ui.tagText(a.id);
+    $('next-tags').hidden = !tags;
+    $('next-tags').textContent = tags;
     $('next-later').hidden = st === ST_AGAIN;
     $('next-street').hidden = left < 2;
     $('next-street').textContent = `Toute la rue (${left})`;

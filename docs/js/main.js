@@ -13,6 +13,8 @@ import { ControlView } from './views/control.js';
 import { DistributeView } from './views/distribute.js';
 import { PrepareView } from './views/prepare.js';
 import { RouteView } from './views/route.js';
+import { TagsView } from './views/tags.js';
+import { TagAlerts } from './tag-alerts.js';
 import { WakeLockController } from './wakelock.js';
 
 async function loadJSON(url) {
@@ -39,10 +41,12 @@ async function start() {
     const versions = { app: null, data: data.version };
     const tabs = new TabBar({ ui, panel });
     const app = { map, ui, data, store, gps, wake, backup, versions, tabs, panel };
+    app.alerts = new TagAlerts(app);
     app.route = new RouteView(app);
     app.prepare = new PrepareView(app);
     app.distribute = new DistributeView(app);
     app.control = new ControlView(app);
+    app.tags = new TagsView(app);
     app.debug = new DebugPanel(app);
     window.neyronApp = app;  // accès pour les tests
     splash.hidden = true;
