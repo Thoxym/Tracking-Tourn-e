@@ -38,7 +38,7 @@ export class DistributeView {
   // prochaine adresse non traitée dans l'ordre de passage : à faire, sinon à repasser ; null si tout est traité
   next() {
     const { ui, store } = this.app;
-    const seq = ui.sequence().flatMap((g) => g.addrs);
+    const seq = ui.visitOrder();
     return seq.find((a) => store.status(a.id) === ST_TODO) || seq.find((a) => store.status(a.id) === ST_AGAIN) || null;
   }
 
@@ -97,7 +97,10 @@ export class DistributeView {
     const st = store.status(a.id);
     const left = ui.byStreet[a.s].filter((x) => !isTreated(store.status(x.id))).length;
     card.style.setProperty('--sc', ui.streets[a.s].colors[ui.isDark() ? 1 : 0]);
-    $('next-pos').textContent = `Prochaine adresse · Rue ${ui.order.indexOf(a.s) + 1}/${ui.order.length} · ${plural(left, 'numéro restant', 'numéros restants')}`;
+    const stops = store.activeTour?.route?.stops;
+    const k = stops?.length ? stops.findIndex((st) => st.ids.includes(a.id)) : -1;
+    const where = k >= 0 ? `Arrêt ${k + 1}/${stops.length}` : `Rue ${ui.order.indexOf(a.s) + 1}/${ui.order.length}`;
+    $('next-pos').textContent = `Prochaine adresse · ${where} · ${plural(left, 'numéro restant', 'numéros restants')}`;
     $('next-title').textContent = addressLabel(a, ui.streets);
     $('next-sub').textContent = [st === ST_AGAIN ? 'À repasser' : '', `côté ${a.side}`, a.ld].filter(Boolean).join(' · ');
     $('next-later').hidden = st === ST_AGAIN;

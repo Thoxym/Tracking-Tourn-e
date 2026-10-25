@@ -87,11 +87,21 @@ export class ControlView {
     const seq = ui.sequence();
     const left = workload(seq.map((g) => ({ ...g, addrs: g.addrs.filter((a) => !isTreated(store.status(a.id))) })),
       workloadSettings());
+    // itinéraire calculé : reste = arrêts qui ont encore une adresse non traitée (trajet + part du service)
+    const stops = tour.route?.stops;
+    let routeLeft = null;
+    if (stops?.length) {
+      routeLeft = 0;
+      for (const st of stops) {
+        const n = st.ids.filter((id) => !isTreated(store.status(id))).length;
+        if (n) routeLeft += st.legSec + (st.service * n) / st.ids.length;
+      }
+    }
     $('ctl-left').hidden = !total;
-    $('ctl-left').textContent = left.addresses
-      ? `Reste ≈ ${formatDuration(left.seconds)} · ${formatDistance(left.meters)} (estimation)`
-      : 'Toutes les adresses sont traitées.';
-    const all = seq.flatMap((g) => g.addrs);
+    $('ctl-left').textContent = !left.addresses ? 'Toutes les adresses sont traitées.'
+      : routeLeft !== null ? `Reste ≈ ${formatDuration(routeLeft)} (itinéraire)`
+        : `Reste ≈ ${formatDuration(left.seconds)} · ${formatDistance(left.meters)} (estimation)`;
+    const all = ui.visitOrder();
     this.renderAnomalies(all);
     this.renderUntreated(all);
     this.renderHistory(tour);
@@ -186,7 +196,7 @@ export class ControlView {
     const tour = store.activeTour;
     const passage = from === undefined ? store.derive(tour.id) : store.derive(tour.id, from, to);
     const hours = $('ctl-hours').checked;
-    const args = { tour, groups: ui.sequence(), streets: ui.streets, passage, hours,
+    const args = { tour, groups: ui.visitGroups(), streets: ui.streets, passage, hours,
       from: from ?? store.passageStart(), to: to ?? Date.now() };
     if (ext === 'csv') return backup.shareReport(reportCsv(args), { tourName: tour.name, ext, type: 'text/csv' });
     return backup.shareReport(JSON.stringify(reportJson(args), null, 1), { tourName: tour.name, ext, type: 'application/json' });

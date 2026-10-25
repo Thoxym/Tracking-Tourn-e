@@ -33,20 +33,28 @@ const FOOT_RUN_GAP_M = 200;    // à pied, une portion de rue est coupée au-del
 
 export const streetKeyOf = (id) => id.split('_').slice(0, 2).join('_');
 
-// réglages complets d'une tournée : valeurs par défaut du mode, puis réglages enregistrés
+// réglages complets d'une tournée : valeurs par défaut du mode, puis réglages enregistrés. Les valeurs chiffrées
+// sont propres à chaque mode (`custom.car`, `custom.bike`, `custom.foot`) ; une valeur hors bornes est ignorée.
+const isPoint = (p) => Boolean(p) && Number.isFinite(p.x) && Number.isFinite(p.y);
+
 export function settingsFor(saved = {}) {
   const mode = MODES.includes(saved.mode) ? saved.mode : 'car';
-  const out = { mode, weave: 'auto', weaveBy: {}, start: null, end: null, seed: 1, ...DEFAULTS[mode] };
-  for (const [k, v] of Object.entries(saved)) {
-    if (k in LIMITS) {
-      if (Number.isFinite(v) && v >= LIMITS[k][0] && v <= LIMITS[k][1]) out[k] = v;
-    } else if (k === 'weave') {
-      if (WEAVE.includes(v)) out.weave = v;
-    } else if (k === 'weaveBy' && v && typeof v === 'object') out.weaveBy = { ...v };
-    else if (k === 'fromVehicle') out.fromVehicle = Boolean(v) && mode === 'car';
-    else if (k === 'start' || k === 'end') out[k] = v;
-    else if (k === 'seed' && Number.isInteger(v)) out.seed = v;
+  const out = { mode, weave: 'auto', weaveBy: {}, start: null, end: null, seed: 1, fromVehicle: false, ...DEFAULTS[mode] };
+  const custom = saved.custom && typeof saved.custom === 'object' && saved.custom[mode] ? saved.custom[mode] : {};
+  const nums = { ...saved, ...custom };
+  for (const k of Object.keys(LIMITS)) {
+    const v = nums[k];
+    if (k in DEFAULTS[mode] && Number.isFinite(v) && v >= LIMITS[k][0] && v <= LIMITS[k][1]) out[k] = v;
   }
+  if (WEAVE.includes(saved.weave)) out.weave = saved.weave;
+  if (saved.weaveBy && typeof saved.weaveBy === 'object') {
+    for (const [k, v] of Object.entries(saved.weaveBy)) if (v === 'weave' || v === 'sides') out.weaveBy[k] = v;
+  }
+  out.fromVehicle = mode === 'car' && Boolean(saved.fromVehicle);
+  if (isPoint(saved.start)) out.start = { x: saved.start.x, y: saved.start.y };
+  if (saved.end === 'start' && out.start) out.end = 'start';
+  else if (isPoint(saved.end)) out.end = { x: saved.end.x, y: saved.end.y };
+  if (Number.isInteger(saved.seed)) out.seed = saved.seed;
   return out;
 }
 
@@ -125,7 +133,7 @@ function arcsFor(ctx, e, side) {
 }
 
 // unité « arrêt » du véhicule en (e, t) avec ses adresses ; une orientation par arc
-function stopUnit(ctx, e, t, members, mixed) {
+function stopUnit(ctx, e, t, members, mixed, forceArcs = null) {
   const { g, st } = ctx;
   const len = g.elen[e];
   const ms = members.map((d) => {
@@ -136,7 +144,7 @@ function stopUnit(ctx, e, t, members, mixed) {
   const span = Math.max(...tps) - Math.min(...tps);
   const walk = 2 * span + ms.reduce((s, m) => s + 2 * m.perp, 0);
   const side = mixed ? 0 : ms[0].side;
-  const opts = arcsFor(ctx, e, side).map((arc) => {
+  const opts = (forceArcs || arcsFor(ctx, e, side)).map((arc) => {
     const fwd = !(arc & 1);
     const order = [...ms].sort((p, q) => (fwd ? p.tp - q.tp : q.tp - p.tp));
     // traversées : le véhicule est garé à droite ; chaque changement de côté, et le retour, en est une
@@ -153,7 +161,7 @@ function stopUnit(ctx, e, t, members, mixed) {
     const s = g.arcOffset(arc, t);
     return {
       arc, sIn: s, sOut: s, order: order.map((m) => m.d.id), sides: order.map((m) => (fwd ? m.side : -m.side)),
-      service: st.stopSec + ms.length * st.boxSec + walk / ctx.walkMps + crossings * st.crossSec,
+      service: (st.stopSec || 0) + ms.length * st.boxSec + walk / ctx.walkMps + crossings * st.crossSec,
     };
   });
   const p = g.pointAt(e, t);
@@ -711,45 +719,62 @@ export function computeRoute({ graph, data, snap, ids, settings: saved, order = 
 // itinéraire détaillé d'une séquence d'orientations : arrêts, trajets, totaux
 function describe(ctx, pb, opts, units, seq, extra) {
   const { g } = ctx;
-  const C = pb.C;
-  const legs = [];
+  const stops = seq.map((o) => {
+    const u = units[opts[o].unit];
+    const op = opts[o];
+    return {
+      kind: u.kind, ids: op.order, sides: op.sides, arc: op.arc, sIn: op.sIn, arcOut: op.arcOut ?? op.arc, sOut: op.sOut,
+      path: op.path || null, x: u.x, y: u.y, street: g.es[u.e], walk: u.walk, service: op.service, mixed: u.mixed,
+    };
+  });
+  return {
+    ...evaluate(ctx, stops, extra.start, extra.end),
+    baseline: { sec: extra.baseline },
+    missing: extra.missing,
+    unreachable: extra.unreachable,
+    rounds: extra.rounds,
+    ms: Math.round(extra.ms),
+  };
+}
+
+// trajets et totaux d'une suite d'arrêts (calculée, ou retouchée à la main) ; chaque arrêt reçoit le temps et la
+// distance du trajet qui y mène (legSec, legM)
+function evaluate(ctx, stops, start, end) {
+  const { g } = ctx;
+  const C = g.costs(ctx.mode, ctx.st);
   const legOf = (from, toPos) => {
     const res = g.search(C, from, { pred: true });
     const path = g.pathTo(res, toPos) || [];
     const m = path.reduce((s, p) => s + Math.max(0, p.s1 - p.s0), 0);
     return { arcs: path, sec: g.costTo(res, toPos), m };
   };
-  const stops = seq.map((o) => {
-    const u = units[opts[o].unit];
-    const op = opts[o];
-    return {
-      kind: u.kind, ids: op.order, sides: op.sides, arc: op.arc, sIn: op.sIn, arcOut: op.arcOut ?? op.arc, sOut: op.sOut,
-      path: op.path || null, x: u.x, y: u.y,
-      street: g.es[u.e], walk: u.walk, service: op.service, mixed: u.mixed,
-    };
-  });
-  let travel = 0;
-  let meters = 0;
-  if (extra.start && stops.length) {
-    // départ : la meilleure des orientations possibles au point de départ
-    let bestLeg = null;
-    for (const q of extra.start) {
-      const leg = legOf({ arc: q.arc, s: q.sOut }, { arc: stops[0].arc, s: stops[0].sIn });
-      if (!bestLeg || leg.sec < bestLeg.sec) bestLeg = leg;
+  const best = (froms, to) => {
+    let out = null;
+    for (const f of froms) {
+      const leg = legOf(f, to);
+      if (!out || leg.sec < out.sec) out = leg;
     }
-    legs.push(bestLeg);
-  } else legs.push(null);
-  for (let k = 1; k < stops.length; k++) {
-    legs.push(legOf({ arc: stops[k - 1].arcOut, s: stops[k - 1].sOut }, { arc: stops[k].arc, s: stops[k].sIn }));
-  }
+    return out;
+  };
+  const legs = stops.map((st, k) => {
+    if (k === 0) return start ? best(start.map((q) => ({ arc: q.arc, s: q.sOut })), { arc: st.arc, s: st.sIn }) : null;
+    const prev = stops[k - 1];
+    return legOf({ arc: prev.arcOut, s: prev.sOut }, { arc: st.arc, s: st.sIn });
+  });
   let endLeg = null;
-  if (extra.end && stops.length) {
+  if (end && stops.length) {
     const last = stops[stops.length - 1];
-    for (const q of extra.end) {
+    for (const q of end) {
       const leg = legOf({ arc: last.arcOut, s: last.sOut }, { arc: q.arc, s: q.sIn });
       if (!endLeg || leg.sec < endLeg.sec) endLeg = leg;
     }
   }
+  stops.forEach((st, k) => {
+    st.legSec = legs[k] ? legs[k].sec : 0;
+    st.legM = legs[k] ? legs[k].m : 0;
+  });
+  let travel = 0;
+  let meters = 0;
   for (const l of [...legs, endLeg]) {
     if (!l) continue;
     travel += l.sec;
@@ -775,10 +800,127 @@ function describe(ctx, pb, opts, units, seq, extra) {
       stops: stops.length,
       addresses: stops.reduce((s, x) => s + x.ids.length, 0),
     },
-    baseline: { sec: extra.baseline },
-    missing: extra.missing,
-    unreachable: extra.unreachable,
-    rounds: extra.rounds,
-    ms: Math.round(extra.ms),
   };
+}
+
+// ------------------------------------------------------ côté page : retouches
+
+// contexte de calcul pour une tournée (fil principal) : réglages complétés, positions de départ et d'arrivée
+export function planContext({ graph, data, snap, settings }) {
+  const ctx = new Ctx(graph, data, snap, settingsFor(settings));
+  const endPt = ctx.st.end === 'start' ? ctx.st.start : ctx.st.end;
+  return { ctx, start: positionOf(ctx, ctx.st.start), end: positionOf(ctx, endPt) };
+}
+
+// itinéraire enregistré -> trajets et totaux à jour (après une retouche, ou pour l'afficher)
+export function evaluateStops(plan, stops) {
+  return evaluate(plan.ctx, stops.map((s) => ({ ...s })), plan.start, plan.end);
+}
+
+// arrêt du véhicule recalculé à une position imposée (arc, abscisse s depuis le début de l'arc) avec ces adresses
+export function restop(plan, arc, s, ids) {
+  const { ctx } = plan;
+  const { g } = ctx;
+  const e = arc >> 1;
+  const t = arc & 1 ? g.elen[e] - s : s;
+  const members = ids.map((id) => ctx.delivery(id)).filter(Boolean);
+  if (!members.length) return null;
+  const sides = new Set(members.map((d) => sideOn(g, e, d)));
+  const u = stopUnit(ctx, e, t, members, sides.size > 1, [arc]);
+  const o = u.opts[0];
+  return {
+    kind: 'stop', ids: o.order, sides: o.sides, arc, sIn: o.sIn, arcOut: arc, sOut: o.sOut, path: null,
+    x: u.x, y: u.y, street: g.es[e], walk: u.walk, service: o.service, mixed: u.mixed,
+  };
+}
+
+// fusionner l'arrêt k avec le suivant : le véhicule reste au premier, on dessert les deux à pied
+export function mergeStops(plan, stops, k) {
+  const a = stops[k];
+  const b = stops[k + 1];
+  if (!a || !b || a.kind !== 'stop' || b.kind !== 'stop') return null;
+  const m = restop(plan, a.arc, a.sIn, [...a.ids, ...b.ids]);
+  if (!m) return null;
+  return [...stops.slice(0, k), m, ...stops.slice(k + 2)];
+}
+
+// séparer l'arrêt k en deux : la seconde moitié (dans le sens de parcours) devient un arrêt au droit de sa
+// première adresse
+export function splitStop(plan, stops, k) {
+  const a = stops[k];
+  if (!a || a.kind !== 'stop' || a.ids.length < 2) return null;
+  const { ctx } = plan;
+  const { g } = ctx;
+  const half = Math.ceil(a.ids.length / 2);
+  const first = restop(plan, a.arc, a.sIn, a.ids.slice(0, half));
+  const d = ctx.delivery(a.ids[half]);
+  const e = a.arc >> 1;
+  const p = g.project(e, d.px, d.py);
+  const second = restop(plan, a.arc, g.arcOffset(a.arc, p.t), a.ids.slice(half));
+  if (!first || !second) return null;
+  return [...stops.slice(0, k), first, second, ...stops.slice(k + 1)];
+}
+
+// composition changée : adresses retirées enlevées des arrêts ; adresses ajoutées rangées dans l'arrêt le plus
+// proche (à moins de la marche max) ou dans un nouvel arrêt placé après lui. Les retouches sont gardées.
+export function updateComposition(plan, stops, ids) {
+  const { ctx } = plan;
+  const { g, st } = ctx;
+  const keep = new Set(ids);
+  const out = stops.map((s) => {
+    const kept = s.ids.map((id, k) => (keep.has(id) ? k : -1)).filter((k) => k >= 0);
+    if (!kept.length) return null;
+    if (kept.length === s.ids.length) return s;
+    const ids2 = kept.map((k) => s.ids[k]);
+    if (s.kind === 'stop') return restop(plan, s.arc, s.sIn, ids2) || { ...s, ids: ids2 };
+    return { ...s, ids: ids2, sides: kept.map((k) => s.sides[k]) };
+  }).filter(Boolean);
+  const present = new Set(out.flatMap((s) => s.ids));
+  const W = st.walkMax || 0;
+  for (const id of ids) {
+    if (present.has(id)) continue;
+    const d = ctx.delivery(id);
+    if (!d) continue;
+    let bestK = -1;
+    let bestD = Infinity;
+    out.forEach((s, k) => {
+      const dist = Math.hypot(s.x - d.px, s.y - d.py);
+      if (dist < bestD) {
+        bestD = dist;
+        bestK = k;
+      }
+    });
+    const near = out[bestK];
+    if (near && near.kind === 'stop' && bestD <= W) {
+      out[bestK] = restop(plan, near.arc, near.sIn, [...near.ids, id]) || near;
+    } else {
+      const arcs = [2 * d.e, 2 * d.e + 1].filter((a) => g.arcAllowed(a, ctx.mode));
+      const arc = arcs.find((a) => (a & 1 ? -d.sd : d.sd) > 0) ?? arcs[0];
+      const s = restop(plan, arc, g.arcOffset(arc, d.t), [id]);
+      if (s) out.splice(bestK + 1, 0, s);
+    }
+    present.add(id);
+  }
+  return out;
+}
+
+// tracé d'un itinéraire pour la carte : trajets entre arrêts et portions parcourues, en polylignes
+export function routeLines(graph, evaluated) {
+  const lines = [];
+  const add = (pieces) => {
+    const pts = [];
+    for (const p of pieces || []) {
+      if (p.s1 - p.s0 < 0.05 && pieces.length > 1) continue;
+      const seg = graph.arcPolyline(p.arc, p.s0, p.s1);
+      if (pts.length) seg.shift();
+      pts.push(...seg);
+    }
+    if (pts.length > 1) lines.push(pts);
+  };
+  evaluated.stops.forEach((s, k) => {
+    if (evaluated.legs[k]) add(evaluated.legs[k].arcs);
+    if (s.path) add(s.path);
+  });
+  if (evaluated.endLeg) add(evaluated.endLeg.arcs);
+  return lines;
 }

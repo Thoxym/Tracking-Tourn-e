@@ -12,6 +12,7 @@ import { UI } from './ui.js';
 import { ControlView } from './views/control.js';
 import { DistributeView } from './views/distribute.js';
 import { PrepareView } from './views/prepare.js';
+import { RouteView } from './views/route.js';
 import { WakeLockController } from './wakelock.js';
 
 async function loadJSON(url) {
@@ -38,6 +39,7 @@ async function start() {
     const versions = { app: null, data: data.version };
     const tabs = new TabBar({ ui, panel });
     const app = { map, ui, data, store, gps, wake, backup, versions, tabs, panel };
+    app.route = new RouteView(app);
     app.prepare = new PrepareView(app);
     app.distribute = new DistributeView(app);
     app.control = new ControlView(app);

@@ -2,6 +2,7 @@
 // par fusion. Un fichier importé est une donnée non fiable : validé champ par champ, champs inconnus retirés.
 
 import { BACKUP_SCHEMA, REASON_CODES, STATUSES, ST_ANOMALY } from './store.js';
+import { LIMITS, MODES, WEAVE } from './itinerary.js';
 import { reportFileName } from './report.js';
 
 const $ = (id) => document.getElementById(id);
@@ -42,6 +43,69 @@ export function validEvent(e) {
   return out;
 }
 
+// itinéraire d'une tournée : réglages et arrêts calculés (champs connus seulement, tailles bornées)
+const isNum = (v) => Number.isFinite(v) && Math.abs(v) < 1e7;
+const isIdx = (v) => Number.isSafeInteger(v) && v >= 0 && v < 1e7;
+const isPt = (p) => p && typeof p === 'object' && isNum(p.x) && isNum(p.y);
+
+function validRouteSettings(o) {
+  const st = o && typeof o === 'object' ? o : {};
+  const out = {};
+  if (MODES.includes(st.mode)) out.mode = st.mode;
+  if (WEAVE.includes(st.weave)) out.weave = st.weave;
+  if (st.weaveBy && typeof st.weaveBy === 'object') {
+    out.weaveBy = {};
+    for (const [k, v] of Object.entries(st.weaveBy).slice(0, 2000)) if (isStr(k, 64) && (v === 'weave' || v === 'sides')) out.weaveBy[k] = v;
+  }
+  if (st.custom && typeof st.custom === 'object') {
+    out.custom = {};
+    for (const m of MODES) {
+      const c = st.custom[m];
+      if (!c || typeof c !== 'object') continue;
+      out.custom[m] = {};
+      for (const [k, [lo, hi]] of Object.entries(LIMITS)) if (Number.isFinite(c[k]) && c[k] >= lo && c[k] <= hi) out.custom[m][k] = c[k];
+    }
+  }
+  if (st.fromVehicle === true) out.fromVehicle = true;
+  if (isPt(st.start)) out.start = { x: st.start.x, y: st.start.y };
+  if (st.end === 'start' || isPt(st.end)) out.end = st.end === 'start' ? 'start' : { x: st.end.x, y: st.end.y };
+  return out;
+}
+
+function validStop(s) {
+  if (!s || typeof s !== 'object' || !['stop', 'run', 'window'].includes(s.kind)) return null;
+  if (!Array.isArray(s.ids) || !s.ids.length || s.ids.length > MAX_IDS || !s.ids.every((id) => isStr(id, 64))) return null;
+  if (!Array.isArray(s.sides) || s.sides.length !== s.ids.length || !s.sides.every((v) => v === 1 || v === -1)) return null;
+  if (![s.arc, s.arcOut].every(isIdx) || ![s.sIn, s.sOut, s.x, s.y, s.walk, s.service].every(isNum)) return null;
+  const path = Array.isArray(s.path) ? s.path.slice(0, 500).filter((p) => p && isIdx(p.arc) && isNum(p.s0) && isNum(p.s1))
+    .map((p) => ({ arc: p.arc, s0: p.s0, s1: p.s1 })) : null;
+  return {
+    kind: s.kind, ids: [...s.ids], sides: [...s.sides], arc: s.arc, sIn: s.sIn, arcOut: s.arcOut, sOut: s.sOut, path,
+    x: s.x, y: s.y, street: Number.isSafeInteger(s.street) ? s.street : -1, walk: s.walk, service: s.service,
+    mixed: s.mixed === true, legSec: isNum(s.legSec) ? s.legSec : 0, legM: isNum(s.legM) ? s.legM : 0,
+  };
+}
+
+export function validRoute(r) {
+  if (!r || typeof r !== 'object') return null;
+  const out = { settings: validRouteSettings(r.settings) };
+  if (Array.isArray(r.stops) && r.stops.length <= MAX_TOUR_IDS) {
+    const stops = r.stops.map(validStop);
+    if (stops.every(Boolean) && stops.length) {
+      out.stops = stops;
+      out.roadsVersion = isStr(r.roadsVersion, 16) ? r.roadsVersion : null;
+      out.computedAt = isTime(r.computedAt) ? r.computedAt : 0;
+      out.manual = r.manual === true;
+      out.settingsKey = isStr(r.settingsKey, 4000) ? r.settingsKey : null;
+      const t = r.totals && typeof r.totals === 'object' ? r.totals : {};
+      out.totals = {};
+      for (const k of ['sec', 'travelSec', 'serviceSec', 'driveM', 'walkM', 'stops', 'addresses']) out.totals[k] = isNum(t[k]) ? t[k] : 0;
+      out.baseline = isNum(r.baseline) ? r.baseline : null;
+    }
+  }
+  return out;
+}
+
 export function validTour(t) {
   if (!t || typeof t !== 'object' || !isStr(t.id, 64)) return null;
   const ids = Array.isArray(t.ids) ? t.ids.slice(0, MAX_TOUR_IDS).filter((id) => isStr(id, 64)) : [];
@@ -55,6 +119,7 @@ export function validTour(t) {
     order: keyList(t.order),
     reverse: keyList(t.reverse),
     closures: Array.isArray(t.closures) ? t.closures.slice(0, 2000).map(validClosure).filter(Boolean).sort((a, b) => a.at - b.at) : [],
+    ...(t.route ? { route: validRoute(t.route) } : {}),
   };
 }
 

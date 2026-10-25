@@ -494,11 +494,43 @@ Pourquoi pas Dijkstra seul : il donne le plus court chemin entre deux points. L'
     - tournée par défaut : chaque adresse une fois, marche max respectée, mieux que l'ordre par rues, trajets complets, même graine même résultat ;
     - Route de Genève : tissée, arrêts mêlant pairs et impairs ; non tissée, un seul côté, toujours à droite ; à pied, longues portions d'un seul côté ;
     - worker : annulation, progression, résultat.
-- [ ] **I3 — Préparer, page Itinéraire** :
-  - réglages : véhicule, tissage, départ / arrivée ;
-  - calcul et aperçu ;
-  - liste d'arrêts à retoucher (Monter / Descendre, fusionner, séparer) ;
-  - `tour.route`, `ui.visitOrder()`.
+- [x] **I3 — Préparer, page Itinéraire** ✅ (25/10/2026).
+  - **Racine de Préparer** : la ligne « Ordre de passage » devient « Itinéraire » (valeur : durée, ou « à calculer »). L'ordre des rues devient une ligne de la page Itinéraire (`tests/helpers.js` : `openPage` passe par `#prep-route-row` pour `#prep-order-row`). Avec un itinéraire, les tuiles Distance et Durée en reprennent les totaux.
+  - **Page Itinéraire** (`js/views/route.js`, `RouteView`), dans l'ordre :
+    - avis « Itinéraire à revoir : n adresses ajoutées / retirées, réglages modifiés, réseau routier mis à jour » avec « Mettre à jour » ;
+    - **résultat** : durée, distance roulée (à pied : distance), arrêts ou portions. Au petit cran, c'est l'élément `[data-peek]`, que `render` déplace ;
+    - gain sur l'ordre des rues, marche autour des arrêts ;
+    - lignes : Arrêts dans l'ordre, Voir sur le plan (petit cran, plan cadré), Optimiser davantage (10 s), Supprimer l'itinéraire ;
+    - **réglages** : véhicule (contrôle segmenté), tissage (Auto / Toujours / Jamais), départ et arrivée (feuille d'actions : meilleur premier arrêt, ou au dernier arrêt, retour au départ, choisir sur le plan), réglages avancés ;
+    - « Calculer / Recalculer l'itinéraire » (progression dans le worker), puis la ligne « Ordre des rues ».
+  - **Choisir un point** : page `route-pick` au petit cran ; un toucher sur le plan (à tout zoom : `map.picking`, `ui.pointOverride`) place le départ ou l'arrivée. Le libellé est l'adresse la plus proche (« Près du 28 Rue de la Gare »).
+  - **Réglages avancés** :
+    - champs selon le mode (`data-modes`) : marche autour d'un arrêt, temps d'arrêt, temps par boîte, traverser la rue, vitesse de marche, vitesse à vélo ;
+    - interrupteur « Dépôt depuis le véhicule » (voiture) ;
+    - les valeurs sont propres à chaque mode (`settings.custom.car|bike|foot`) ; valeur hors bornes signalée puis abandonnée ; « Valeurs par défaut ».
+  - **Tissage par rue** : éditeur de rue (Par défaut / Tissée / Côté par côté) et menu ⋯ d'un arrêt. Enregistré par clé de voie (`settings.weaveBy`).
+  - **Liste des arrêts** (page `route-stops`) :
+    - pastille numérotée, rue, résumé (« 125, 127, 129 à droite · 144 bis, 144 à gauche » ; portion : « côté droit : 58 → 90 (17) ») ;
+    - Monter / Descendre (le focus reste sur le bouton) ;
+    - ⋯ : feuille d'actions avec Voir sur le plan, Fusionner avec l'arrêt suivant (le véhicule reste au premier), Séparer en deux (la seconde moitié au droit de sa première adresse), tissage de la rue.
+    - Une retouche réévalue trajets et totaux sur le fil principal (`evaluateStops`) et marque l'itinéraire « retouché » (`manual`).
+  - **Composition modifiée** : itinéraire retouché, « Mettre à jour » range les adresses ajoutées dans l'arrêt le plus proche (à moins de la marche max), sinon dans un nouvel arrêt après lui, et retire les adresses enlevées (`updateComposition`), sans toucher aux retouches. Sinon, nouveau calcul. Recalculer un itinéraire retouché demande confirmation.
+  - **Plan** : calques `l-route` (tracé bleu sur liseré, sous les étiquettes) et `l-route-stops` (pastilles numérotées de taille constante, départ « D » vert, arrivée « A »), affichés tant qu'une page de l'itinéraire est ouverte (`map.setRoute`).
+  - **Modèle** : `tour.route = {settings, stops?, totals?, baseline?, roadsVersion?, computedAt?, manual?, settingsKey?}`.
+    - Un arrêt garde ids, côtés, arcs et abscisses d'entrée et de sortie, chemin d'une portion, point, marche, service, et le temps et la distance du trajet qui y mène (`legSec`, `legM`).
+    - Les trajets se recalculent à l'affichage : `js/roads.js` charge le réseau sur le fil principal à la demande.
+    - Import : `io.validRoute`, champs connus seulement, tailles bornées ; un arrêt invalide fait ignorer l'itinéraire, mais les réglages sont gardés. Ce sont des champs facultatifs du format 2.
+  - **Ordre de visite** : `ui.visitOrder()` (itinéraire, puis les adresses ajoutées depuis, dans l'ordre des rues) et `ui.visitGroups()`.
+    - Distribuer : prochaine adresse, « Arrêt k/N ».
+    - Contrôler : non traitées, anomalies ; « Reste ≈ » = arrêts encore à servir, trajet + part du service.
+    - Rapport : ordre de visite.
+  - **Feuille d'actions générique** `ui.actionSheet(titre, [{label, value, checked?, destructive?}], {message})` (dialogue `#action-sheet`), réutilisable pour les repères et le choix de tournée.
+  - **Tests** (`tests/itineraire.spec.js`, WebKit et Chromium) :
+    - calcul, tracé, retouches (descendre, fusionner, séparer), Distribuer suit l'itinéraire, composition modifiée puis mise à jour qui garde les retouches, relance ;
+    - à pied, tissage « jamais », réglages avancés (mode, valeur refusée), départ touché sur le plan, retour au départ, Rue de la Gare tissée depuis l'éditeur ;
+    - itinéraire importé validé champ par champ.
+
+    Audit des cibles de 44 px étendu aux pages Itinéraire, Réglages, Arrêts et à la feuille d'actions.
 - [ ] **I4 — Repères** : `store.TAGS`, `meta.tags`, fiche d'adresse, page Repères, icônes sur le plan, alertes.
 - [ ] **I5 — Navigation** : choix de la tournée et « Démarrer » dans Distribuer, arrêt courant, bandeau de consigne, tracé, recalcul hors itinéraire.
 - [ ] **I5 bis — Simulation** : même vue, position simulée le long du tracé, pause, ×1 à ×8, arrêt précédent / suivant, sans écrire dans le journal.
@@ -616,7 +648,7 @@ neyron-tournees/
 │   ├── css/app.css
 │   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js,
 │   │                     #   tabs.js, sheet.js, tourplan.js, report.js, views/ (prepare.js, distribute.js, control.js, common.js) — branche facteur
-│   │                     #   routing.js, itinerary.js, route-worker.js, route-client.js — itinéraire (§2 quater)
+│   │                     #   routing.js, itinerary.js, route-worker.js, route-client.js, roads.js, views/route.js — itinéraire (§2 quater)
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, roads.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
@@ -1131,3 +1163,8 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - arrêts regroupés par distance de marche autour de l'arrêt (et non par tronçon), pour tisser par-dessus les 2 chaussées ;
   - à pied, portions de rue mises bout à bout, pour que « non tissé » donne un côté puis l'autre et pas un zigzag tronçon par tronçon ;
   - heuristique reproductible (graine) et bornée en temps, dans un worker.
+- **25/10/2026** — Commit `d2177ba` (I2). I3 :
+  - « Recalculer » repart de zéro, avec confirmation si l'itinéraire est retouché, au lieu de réoptimiser autour de retouches verrouillées : plus simple à comprendre, et une composition modifiée garde les retouches (« Mettre à jour »).
+  - Réglages chiffrés propres à chaque mode (passer de la voiture au vélo ne mélange pas les valeurs).
+  - Une fois calculé, le résultat passe en tête de la page Itinéraire et sert de petit cran.
+  - Le tracé n'est montré que dans les pages de l'itinéraire, pour ne pas charger Distribuer avant la navigation (I5).

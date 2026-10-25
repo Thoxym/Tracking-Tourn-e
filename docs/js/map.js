@@ -39,6 +39,7 @@ export class MapView {
     this.pointable = data.addresses.filter((a) => !a.ctx);
     this.scope = null;       // ids de la tournée active (null : tout) ; hors tournée = gris, non pointable
     this.selecting = false;  // composition sur la carte (Préparer) : toutes les adresses sont pointables
+    this.picking = false;    // point à placer (itinéraire) : un tap donne sa position, à tout zoom
     this.handlers = {};
     this.pointers = new Map();
     this.gesture = null;
@@ -64,9 +65,11 @@ export class MapView {
     const lParcels = layer('l-parcels');
     const lTraces = layer('l-traces');
     const lBuildings = layer('l-buildings');
+    this.lRoute = layer('l-route');
     this.lLabels = layer('l-labels');
     const lDots = layer('l-dots');
     this.lNumbers = layer('l-numbers');
+    this.lRouteStops = layer('l-route-stops');
     this.lSelect = layer('l-select');
     this.lGps = layer('l-gps');
 
@@ -250,6 +253,7 @@ export class MapView {
     this.lNumbers.style.fontSize = `${fs}px`;
     const ls = clamp(12 / k, 2.6, 22);
     this.lLabels.style.fontSize = `${ls}px`;
+    this.lRouteStops.style.fontSize = `${11 / k}px`;
     this.svg.classList.toggle('z-low', k < K_NUMBERS);
     this.svg.classList.toggle('z-min', k < K_LABELS);
     this._updateRing();
@@ -410,6 +414,24 @@ export class MapView {
     this.ring.setAttribute('r', 17 / this.k);
   }
 
+  // Itinéraire : tracé (polylignes) et arrêts numérotés, départ et arrivée ; null pour l'effacer.
+  // route = {lines: [[{x, y}, …], …], stops: [{x, y, label, cls?}]}
+  setRoute(route) {
+    this.lRoute.replaceChildren();
+    this.lRouteStops.replaceChildren();
+    if (!route) return;
+    const d = route.lines.map((pts) => `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}`).join('');
+    el('path', { class: 'route-casing', d }, this.lRoute);
+    el('path', { class: 'route-line', d }, this.lRoute);
+    for (const s of route.stops) {
+      const g = el('g', { class: `route-stop${s.cls ? ` ${s.cls}` : ''}` }, this.lRouteStops);
+      const dot = `M${s.x} ${s.y}h0.01`;
+      el('path', { class: 'route-stop-ring', d: dot }, g);
+      el('path', { class: 'route-stop-dot', d: dot }, g);
+      el('text', { class: 'route-stop-num', x: s.x, y: s.y }, g).textContent = s.label;
+    }
+  }
+
   // repère sur un point à vérifier (bâtiment sans adresse, numéro hors tournée) ; null pour l'effacer
   mark(x, y) {
     this.marked = x == null ? null : { x, y };
@@ -565,7 +587,7 @@ export class MapView {
   }
 
   _tap(x, y) {
-    if (this.k < K_NUMBERS) {  // vue d'ensemble : un tap rapproche au lieu de pointer au hasard
+    if (this.k < K_NUMBERS && !this.picking) {  // vue d'ensemble : un tap rapproche au lieu de pointer au hasard
       this.zoomAt(2.5, x, y, true);
       return;
     }

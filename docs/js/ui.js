@@ -44,6 +44,7 @@ export class UI {
     this.order = [];  // rues de la tournée active dans l'ordre de passage
     this.sheetListeners = [];
     this.tapOverride = null;  // composition sur la carte (Préparer) : le tap ajoute / retire au lieu de pointer
+    this.pointOverride = null;  // point à placer sur le plan (itinéraire) : le tap donne la position
     this._buildLegend();
     this._applyTour();
     this._initTheme();
@@ -77,6 +78,39 @@ export class UI {
   // adresses de la tournée active dans l'ordre de passage, par rue : [{s, addrs}]
   sequence() {
     return sequence(this.store.activeTour, this.byStreet, this.keys);
+  }
+
+  // adresses de la tournée active dans l'ordre de visite : l'itinéraire s'il est calculé, sinon l'ordre des rues.
+  // Une adresse ajoutée depuis le calcul suit, dans l'ordre des rues ; une adresse retirée est ignorée.
+  visitOrder() {
+    const seq = this.sequence().flatMap((g) => g.addrs);
+    const stops = this.store.activeTour?.route?.stops;
+    if (!stops?.length) return seq;
+    const inTour = new Map(seq.map((a) => [a.id, a]));
+    const seen = new Set();
+    const out = [];
+    for (const st of stops) {
+      for (const id of st.ids) {
+        const a = inTour.get(id);
+        if (a && !seen.has(id)) {
+          seen.add(id);
+          out.push(a);
+        }
+      }
+    }
+    for (const a of seq) if (!seen.has(a.id)) out.push(a);
+    return out;
+  }
+
+  // ordre de visite regroupé par rue consécutive : [{s, addrs}] (rapport, estimation)
+  visitGroups() {
+    const out = [];
+    for (const a of this.visitOrder()) {
+      const last = out[out.length - 1];
+      if (last && last.s === a.s) last.addrs.push(a);
+      else out.push({ s: a.s, addrs: [a] });
+    }
+    return out;
   }
 
   // ------------------------------------------------------- progression
@@ -378,7 +412,11 @@ export class UI {
       clearTimeout(this._scaleTimer);
       this._scaleTimer = setTimeout(() => bar.classList.remove('show'), 1600);
     });
-    this.map.on('tap', ({ address }) => {
+    this.map.on('tap', ({ address, world }) => {
+      if (this.pointOverride) {  // point à placer sur le plan (départ, arrivée de l'itinéraire)
+        if (world) this.pointOverride({ x: world[0] ?? world.x, y: world[1] ?? world.y });
+        return;
+      }
       if (this.tapOverride) {
         if (address) this.tapOverride(address);
         return;
@@ -427,6 +465,31 @@ export class UI {
   }
 
   // motif choisi (code) ou null si annulé ; le motif actuel est mis en avant
+  // Feuille d'actions : items [{label, value, destructive?, checked?}] ; renvoie la valeur choisie, ou null
+  actionSheet(title, items, { message = '' } = {}) {
+    const dlg = $('action-sheet');
+    $('as-title').textContent = title;
+    $('as-msg').textContent = message;
+    $('as-msg').hidden = !message;
+    $('as-list').replaceChildren(...items.map((it, k) => {
+      const b = document.createElement('button');
+      b.type = 'submit';
+      b.className = `as-btn${it.destructive ? ' destructive' : ''}`;
+      b.value = String(k);
+      if (it.checked) b.setAttribute('aria-pressed', 'true');
+      b.textContent = it.label;
+      return b;
+    }));
+    dlg.returnValue = '';
+    return new Promise((resolve) => {
+      dlg.addEventListener('close', () => {
+        const k = Number(dlg.returnValue);
+        resolve(dlg.returnValue !== '' && Number.isInteger(k) && items[k] ? items[k].value : null);
+      }, { once: true });
+      dlg.showModal();
+    });
+  }
+
   pickReason(a) {
     const dlg = $('reason-dialog');
     const current = this.store.status(a.id) === ST_ANOMALY ? this.store.reason(a.id) : null;

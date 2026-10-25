@@ -129,6 +129,7 @@ export class PrepareView {
   // --------------------------------------------------------------- rendu
 
   render() {
+    this.app.route?.render();
     this.renderTours();
     this.renderActive();
     this.renderOrder();
@@ -166,13 +167,14 @@ export class PrepareView {
     const { store, ui } = this.app;
     const t = this.tour;
     const w = workload(ui.sequence(), workloadSettings());
+    const route = t.route?.stops?.length ? t.route : null;  // itinéraire calculé : sa durée et sa distance
     $('prep-tour-name').textContent = t.name;
     $('prep-summary').textContent = w.addresses
       ? `${plural(w.addresses, 'adresse')} · ${plural(w.streets, 'rue')}`
       : 'Tournée vide : ajoutez des rues ci-dessous ou choisissez les numéros sur la carte.';
     $('prep-load').hidden = !w.addresses;
-    $('prep-load-dist').textContent = `≈ ${formatDistance(w.meters)}`;
-    $('prep-load-time').textContent = `≈ ${formatDuration(w.seconds)}`;
+    $('prep-load-dist').textContent = `≈ ${formatDistance(route ? route.totals.driveM || route.totals.walkM : w.meters)}`;
+    $('prep-load-time').textContent = `≈ ${formatDuration(route ? route.totals.sec : w.seconds)}`;
     $('btn-tour-archive').disabled = store.liveTours().length < 2;  // la dernière tournée en cours reste
     $('prep-tour-row').setAttribute('aria-label', `Tournée active : ${t.name}. Changer de tournée`);
   }
@@ -456,6 +458,9 @@ export class PrepareView {
     const page = $('street-editor');
     const update = () => this._preview();
     for (const r of page.querySelectorAll('input[name="se-side"]')) r.addEventListener('change', update);
+    for (const r of page.querySelectorAll('input[name="se-weave"]')) {
+      r.addEventListener('change', () => this.app.route.setStreetWeave(this.app.ui.keys.key[this.editing], r.value));
+    }
     $('se-from').addEventListener('input', update);
     $('se-to').addEventListener('input', update);
     $('se-add').addEventListener('click', () => this._applyEditor(true));
@@ -471,6 +476,8 @@ export class PrepareView {
     $('se-sub').textContent = `${plural(addrs.length, 'numéro')} (${even} ${agree(even, 'pair')}, `
       + `${addrs.length - even} ${agree(addrs.length - even, 'impair')}) · n° ${addrs[0].n} à ${addrs[addrs.length - 1].n}`;
     $('street-editor').querySelector('input[name="se-side"][value="all"]').checked = true;
+    const weave = this.tour.route?.settings?.weaveBy?.[this.app.ui.keys.key[i]] || '';
+    for (const r of $('street-editor').querySelectorAll('input[name="se-weave"]')) r.checked = r.value === weave;
     $('se-from').value = '';
     $('se-to').value = '';
     this._preview();

@@ -100,6 +100,9 @@ async function openLegend(page) {
 }
 
 // ouvre une page de la feuille par sa ligne (bouton data-push), dans l'onglet donné
+// lignes qui ne sont pas sur la page principale de leur onglet : la ligne qui y mène
+const NESTED = { '#prep-order-row': '#prep-route-row' };
+
 async function openPage(page, tab, row) {
   const button = page.locator(`#tabbar [data-tab="${tab}"]`);
   await button.click();
@@ -111,6 +114,7 @@ async function openPage(page, tab, row) {
   if (!(await root())) await button.click();
   if (!(await root())) await button.click();  // fiche d'adresse fermée, puis page principale
   await setDetent(page, 'large');
+  if (NESTED[row]) await page.click(NESTED[row]);
   await page.click(row);
 }
 

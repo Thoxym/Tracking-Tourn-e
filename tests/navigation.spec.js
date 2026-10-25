@@ -63,6 +63,8 @@ test('feuille à crans : chaque onglet garde son cran, pages et retour, onglet t
   await openPage(page, 'prepare', '#prep-order-row');
   await expect(page.locator('#prep-order')).toBeVisible();
   await page.click('#view-prepare [data-page="order"] [data-back]');
+  await expect(page.locator('#route-compute')).toBeVisible();  // retour à la page Itinéraire, d'où l'on venait
+  await page.click('#view-prepare [data-page="route"] [data-back]');
   await expect(page.locator('#prep-tour-row')).toBeVisible();
   await page.click('#prep-checks-row');
   await expect(page.locator('#prep-checks')).toBeVisible();

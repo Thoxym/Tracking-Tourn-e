@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
-const { addressData, tourIds, openApp } = require('./helpers');
+const { addressData, tourIds, openApp, waitReady, openPage, trackErrors } = require('./helpers');
 
 const CAR = 1;
 let roads = null;
@@ -198,5 +198,152 @@ test.describe('moteur d\'itinéraire', () => {
     expect(r.n).toBe(tourIds().size);
     expect(r.mode).toBe('bike');
     expect(r.phases).toContain('matrice');
+  });
+});
+
+// --------------------------------------------------------------- Préparer › Itinéraire
+
+const routeOf = (page) => page.evaluate(() => window.neyronApp.store.activeTour.route || null);
+const stopRows = (page) => page.locator('#route-stops .stop-row');
+
+test.describe('page Itinéraire', () => {
+  test('calcul, résultat, arrêts retouchés, ordre de visite, composition modifiée, conservé', async ({ page }) => {
+    const errors = trackErrors(page);
+    await openApp(page);
+    await openPage(page, 'prepare', '#prep-route-row');
+    await expect(page.locator('#route-result')).toBeHidden();
+    await page.click('#route-compute');
+    await expect(page.locator('#route-result')).toBeVisible({ timeout: 30_000 });
+    const r = await routeOf(page);
+    const n = r.stops.length;
+    expect(r.stops.flatMap((st) => st.ids).length).toBe(tourIds().size);
+    await expect(page.locator('#route-count')).toHaveText(String(n));
+    await expect(page.locator('#route-count-l')).toHaveText('Arrêts');
+    await expect(page.locator('#prep-route-n')).toHaveText(/^≈ /);
+    // tracé et arrêts numérotés sur le plan pendant que la page est ouverte
+    await expect(page.locator('.l-route-stops .route-stop')).toHaveCount(n);
+    await expect(page.locator('.l-route .route-line')).toHaveAttribute('d', /^M/);
+
+    // retouches : descendre le premier arrêt, fusionner, séparer
+    await page.click('#route-stops-row');
+    await expect(stopRows(page)).toHaveCount(n);
+    const first = r.stops[0].ids;
+    await page.click('#route-stops [data-k="0"] [data-act="down"]');
+    await expect.poll(async () => (await routeOf(page)).stops[1].ids).toEqual(first);
+    expect((await routeOf(page)).manual).toBe(true);
+    const cur = await routeOf(page);
+    const k = cur.stops.findIndex((st, i, all) => st.kind === 'stop' && all[i + 1]?.kind === 'stop');
+    const merged = [...cur.stops[k].ids, ...cur.stops[k + 1].ids].sort();
+    await page.click(`#route-stops [data-k="${k}"] [data-act="more"]`);
+    await page.locator('#as-list .as-btn', { hasText: 'Fusionner' }).click();
+    await expect(stopRows(page)).toHaveCount(n - 1);
+    expect([...(await routeOf(page)).stops[k].ids].sort()).toEqual(merged);
+    await page.click(`#route-stops [data-k="${k}"] [data-act="more"]`);
+    await page.locator('#as-list .as-btn', { hasText: 'Séparer' }).click();
+    await expect(stopRows(page)).toHaveCount(n);
+    await page.click('#view-prepare [data-page="route-stops"] [data-back]');
+    await expect(page.locator('#route-gain')).toContainText('retouché');
+
+    // Distribuer suit l'itinéraire : la prochaine adresse est la première du premier arrêt
+    const route = await routeOf(page);
+    await page.click('#tabbar [data-tab="distribute"]');
+    await expect(page.locator('.l-route-stops .route-stop')).toHaveCount(0);  // tracé seulement dans l'itinéraire
+    await expect(page.locator('#next-pos')).toContainText(`Arrêt 1/${route.stops.length}`);
+    const label = await page.evaluate((id) => {
+      const { map, ui } = window.neyronApp;
+      const a = map.byId.get(id);
+      return `${a.n}${a.rep ? ` ${a.rep}` : ''} ${ui.streets[a.s].name}`;
+    }, route.stops[0].ids[0]);
+    await expect(page.locator('#next-title')).toHaveText(label);
+
+    // composition modifiée : avis, puis mise à jour qui garde les retouches
+    const gone = route.stops[2].ids[0];
+    await page.evaluate((id) => window.neyronApp.prepare.setIds(window.neyronApp.store.activeTour.ids.filter((x) => x !== id)), gone);
+    await openPage(page, 'prepare', '#prep-route-row');
+    await expect(page.locator('#route-stale-msg')).toHaveText('Itinéraire à revoir : 1 adresse retirée.');
+    await page.click('#route-update');
+    await expect(page.locator('#route-stale')).toBeHidden();
+    const after = await routeOf(page);
+    expect(after.manual).toBe(true);
+    expect(after.stops.flatMap((st) => st.ids)).not.toContain(gone);
+    expect(after.stops.flatMap((st) => st.ids).length).toBe(tourIds().size - 1);
+
+    await page.reload();
+    await waitReady(page);
+    expect((await routeOf(page)).stops.length).toBe(after.stops.length);
+    expect(errors).toEqual([]);
+  });
+
+  test('à pied, tissage par rue, départ choisi sur le plan, réglages avancés', async ({ page }) => {
+    const errors = trackErrors(page);
+    await openApp(page);
+    await openPage(page, 'prepare', '#prep-route-row');
+    await page.locator('label', { has: page.locator('input[name="route-mode"][value="foot"]') }).click();
+    await expect.poll(async () => (await routeOf(page))?.settings.mode).toBe('foot');
+    await page.locator('label', { has: page.locator('input[name="route-weave"][value="never"]') }).click();
+    await expect.poll(async () => (await routeOf(page)).settings.weave).toBe('never');
+
+    // réglages avancés : propres au mode, valeur invalide refusée
+    await page.click('#route-settings-row');
+    await expect(page.locator('#rs-walkMax')).toBeHidden();  // pas d'arrêt à pied
+    await page.fill('#rs-boxSec', '20');
+    await expect.poll(async () => (await routeOf(page)).settings.custom?.foot?.boxSec).toBe(20);
+    await page.fill('#rs-boxSec', '9999');
+    await expect(page.locator('#rs-boxSec')).toHaveAttribute('aria-invalid', 'true');
+    expect((await routeOf(page)).settings.custom.foot.boxSec).toBe(20);
+    await page.click('#view-prepare [data-page="route-settings"] [data-back]');
+
+    // départ : un toucher sur le plan
+    await page.click('#route-start-row');
+    await page.locator('#as-list .as-btn', { hasText: 'Choisir sur le plan' }).click();
+    await expect(page.locator('#route-pick-title')).toHaveText('Point de départ');
+    const box = await page.locator('#map').boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + 120);
+    await expect(page.locator('#route-start')).toHaveText(/^Près du /);
+    const start = (await routeOf(page)).settings.start;
+    expect(Number.isFinite(start.x) && Number.isFinite(start.y)).toBe(true);
+    await expect(page.locator('.route-stop.start')).toHaveCount(1);
+    await page.click('#route-end-row');
+    await page.locator('#as-list .as-btn', { hasText: 'Retour au point de départ' }).click();
+    await expect(page.locator('#route-end')).toHaveText('Retour au départ');
+
+    // tissage forcé d'une rue depuis l'éditeur de rue
+    await openPage(page, 'prepare', '#prep-streets-row');
+    await page.locator('#prep-streets .vrow', { hasText: 'Rue de la Gare' }).click();
+    await page.locator('label', { has: page.locator('input[name="se-weave"][value="weave"]') }).click();
+    await expect.poll(async () => (await routeOf(page)).settings.weaveBy?.['01275_0420']).toBe('weave');
+
+    await openPage(page, 'prepare', '#prep-route-row');
+    await page.click('#route-compute');
+    await expect(page.locator('#route-result')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('#route-count-l')).toHaveText('Portions');
+    const r = await routeOf(page);
+    expect(r.stops.every((st) => st.kind === 'run')).toBe(true);
+    // Rue de la Gare tissée : une portion couvre les deux côtés ; ailleurs, jamais tissé : un seul côté
+    const gare = new Set(addressData().addresses.filter((a) => a.id.startsWith('01275_0420_')).map((a) => a.id));
+    expect(r.stops.some((st) => st.ids.some((id) => gare.has(id)) && new Set(st.sides).size === 2)).toBe(true);
+    expect(r.stops.filter((st) => !st.ids.some((id) => gare.has(id))).every((st) => new Set(st.sides).size === 1)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test('sauvegarde : un itinéraire importé est validé champ par champ', async ({ page }) => {
+    await openApp(page);
+    const r = await page.evaluate(async () => {
+      const { validTour } = await import('./js/io.js');
+      const t = validTour({
+        id: 'x', name: 'X', ids: ['01275_0420_00028'],
+        route: {
+          settings: { mode: 'bike', weave: 'evil', weaveBy: { '01275_0420': 'weave', bad: 'x' }, custom: { bike: { walkMax: 30, stopSec: -5 } }, start: { x: 1, y: 2 }, end: 'start', hack: 1 },
+          stops: [{ kind: 'stop', ids: ['01275_0420_00028'], sides: [1], arc: 4, sIn: 1, arcOut: 4, sOut: 1, x: 1, y: 1, walk: 2, service: 30, path: null, legSec: 3, legM: 4, extra: '<script>' }],
+          totals: { sec: 10 }, roadsVersion: 'abc', computedAt: 5,
+        },
+      });
+      const bad = validTour({ id: 'y', route: { stops: [{ kind: 'boom', ids: [] }] } });
+      return { t, bad };
+    });
+    expect(r.t.route.settings).toEqual({ mode: 'bike', weaveBy: { '01275_0420': 'weave' }, custom: { bike: { walkMax: 30 } }, start: { x: 1, y: 2 }, end: 'start' });
+    expect(r.t.route.stops[0].extra).toBeUndefined();
+    expect(r.t.route.stops.length).toBe(1);
+    expect(r.bad.route.stops).toBeUndefined();  // arrêt invalide : itinéraire ignoré, réglages gardés
   });
 });

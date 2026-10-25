@@ -281,6 +281,19 @@ test.describe('ergonomie', () => {
     expect(await audit(), 'éditeur de rue').toEqual([]);
     await tab(page, 'prepare').click();
     expect(await audit(), 'Préparer').toEqual([]);
+    // itinéraire : page principale (calculée), réglages avancés, liste des arrêts, feuille d'actions
+    await openPage(page, 'prepare', '#prep-route-row');
+    await page.click('#route-compute');
+    await expect(page.locator('#route-result')).toBeVisible({ timeout: 30_000 });
+    expect(await audit(), 'itinéraire').toEqual([]);
+    await page.click('#route-settings-row');
+    expect(await audit(), 'réglages de l’itinéraire').toEqual([]);
+    await page.click('#view-prepare [data-page="route-settings"] [data-back]');
+    await page.click('#route-stops-row');
+    expect(await audit(), 'arrêts').toEqual([]);
+    await page.click('#route-stops [data-k="0"] [data-act="more"]');
+    expect(await audit(), 'feuille d’actions').toEqual([]);
+    await page.keyboard.press('Escape');
 
     await tab(page, 'control').click();
     await setDetent(page, 'large');
