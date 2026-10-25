@@ -420,14 +420,20 @@ export class MapView {
   }
 
   // Itinéraire : tracé (polylignes) et arrêts numérotés, départ et arrivée ; null pour l'effacer.
-  // route = {lines: [[{x, y}, …], …], stops: [{x, y, label, cls?}]}
+  // route = {lines: [[{x, y}, …], …], ahead?: [[{x, y}, …]], stops: [{x, y, label, cls?}]}
   setRoute(route) {
     this.lRoute.replaceChildren();
     this.lRouteStops.replaceChildren();
     if (!route) return;
-    const d = route.lines.map((pts) => `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}`).join('');
+    const path = (lines) => lines.map((pts) => `M${pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('L')}`).join('');
+    const d = path(route.lines);
     el('path', { class: 'route-casing', d }, this.lRoute);
     el('path', { class: 'route-line', d }, this.lRoute);
+    if (route.ahead?.length) {  // navigation : trajet jusqu'au prochain arrêt, en gras
+      const da = path(route.ahead);
+      el('path', { class: 'route-casing ahead', d: da }, this.lRoute);
+      el('path', { class: 'route-line ahead', d: da }, this.lRoute);
+    }
     for (const s of route.stops) {
       const g = el('g', { class: `route-stop${s.cls ? ` ${s.cls}` : ''}` }, this.lRouteStops);
       const dot = `M${s.x} ${s.y}h0.01`;

@@ -512,6 +512,7 @@ export class RouteView {
   // tracé de l'itinéraire sur le plan pendant qu'une page de l'itinéraire est ouverte
   async syncMap() {
     const { map } = this.app;
+    if (this.app.nav?.active) return;  // la navigation dessine son propre tracé
     if (!this.visible()) {
       if (this._shown) {
         map.setRoute(null);

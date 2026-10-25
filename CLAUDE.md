@@ -554,7 +554,38 @@ Pourquoi pas Dijkstra seul : il donne le plus court chemin entre deux points. L'
     - export avec les repères, rapport CSV sans repère, import sur un autre appareil avec repères piégés nettoyés.
 
     Audit des cibles de 44 px étendu à la fenêtre de saisie et à la page Repères.
-- [ ] **I5 — Navigation** : choix de la tournée et « Démarrer » dans Distribuer, arrêt courant, bandeau de consigne, tracé, recalcul hors itinéraire.
+- [x] **I5 — Navigation** ✅ (25/10/2026). Nord en haut ; la voix et la carte orientée viendront en I6.
+  - **En-tête de Distribuer** :
+    - le nom de la tournée est un bouton (chevron) qui ouvre la feuille d'actions des tournées en cours ;
+    - **« Démarrer »** (capsule bleue) à droite.
+    - Sans itinéraire, une feuille d'actions propose « Calculer l'itinéraire » (Préparer › Itinéraire, calcul lancé) ou « Démarrer sans itinéraire » (écran allumé, suivi GPS, prochaine adresse comme avant).
+  - **Mode navigation** (`js/views/navigate.js`, `NavigateView`, `#app[data-mode="nav"]`) :
+    - **sans capsule d'onglets** ;
+    - **bandeau de consigne** `#nav-banner` en verre en haut, entre Annuler et les boutons de droite : flèche, distance, consigne ;
+    - **feuille de l'arrêt en cours** (`#view-navigate`) : « Arrêt k/N », rue, distance, durée restante ; numéros avec leur côté, repère, statut ; Distribué (rond vert) et ⋯ par adresse (Anomalie, À repasser, Remettre à faire, fiche) ; « Arrêt suivant » et « Tout l'arrêt distribué » ; les 3 arrêts suivants ; Terminer, confirmé s'il reste des adresses.
+    - **Arrêt suivant automatique** quand tout l'arrêt est traité (après 400 ms) ; les arrêts sautés reviennent à la fin ; fin de tournée annoncée.
+    - Protection de 500 ms contre le double toucher ; Annuler reste disponible ; les adresses retirées depuis le calcul sont ignorées.
+  - **Guidage** (`js/guidance.js`, sans DOM) :
+    - `buildLeg` : polyligne d'un trajet et consignes aux nœuds selon l'angle entre caps : tout droit si la rue change, légèrement / à droite / à gauche, franchement, demi-tour ;
+    - **ronds-points** en une seule consigne avec le numéro de sortie (sorties = nœuds intérieurs ayant une autre route praticable) ;
+    - `locate` : abscisse et écart, cherchés près de l'abscisse précédente ; `nextManeuver` ; `instruction` (français) ; `formatDist` ;
+    - `reroute` : depuis la position, sens de départ choisi d'après le cap de marche.
+  - **Position** : GPS, ou position simulée (`gps.simulate`).
+    - Le plan suit la position, même si le GPS a coupé son propre suivi ; un glisser à la main le suspend, et « Localiser » le reprend.
+    - Le trajet jusqu'à l'arrêt est calculé depuis la position s'il n'y en a pas (premier arrêt sans point de départ, arrêt sauté).
+    - **Arrivée** à moins de 30 m (vélo 25 m, à pied 20 m) : le bandeau affiche « Arrêt k » et les numéros à droite / à gauche.
+    - **Hors itinéraire** : écart de plus de 30 m (vélo 25 m, à pied 20 m), précision ≤ 25 m, pendant 5 s (`nav.offRouteMs`). Nouveau trajet, toast « Itinéraire recalculé ».
+  - **Plan** : trajet jusqu'à l'arrêt en gras (`setRoute({ahead})`), suite de l'itinéraire, arrêts restants numérotés, arrêt en cours en orange. L'aperçu de Préparer s'efface pendant la navigation.
+  - **Repères** : annoncés quand leur arrêt devient l'arrêt en cours (`TagAlerts`).
+  - **Rejoindre le premier arrêt** : si la position est inconnue ou à plus de 300 m, liens Plans (`maps.apple.com/?daddr=…`) et Waze (`waze.com/ul?ll=…&navigate=yes`). Seules les coordonnées de l'arrêt partent, et seulement sur toucher (plan → GPS par inversion de l'affine).
+  - **Grand écran** : bandeau à droite du panneau latéral.
+  - **Tests** (`tests/guidage.spec.js`, WebKit et Chromium) :
+    - démarrage, liens Plans / Waze, consigne avec distance, arrivée, distribution de l'arrêt puis arrêt suivant, Annuler, Arrêt suivant, Terminer ;
+    - hors itinéraire ;
+    - choix de la tournée et démarrage sans itinéraire (calcul proposé, puis navigation) ;
+    - repère annoncé à l'arrêt.
+
+    Audit des cibles de 44 px étendu à la vue de navigation.
 - [ ] **I5 bis — Simulation** : même vue, position simulée le long du tracé, pause, ×1 à ×8, arrêt précédent / suivant, sans écrire dans le journal.
 - [ ] **I6 — Voix et carte orientée** : `speechSynthesis`, rotation de la carte, repli « nord en haut ».
 - [ ] **I7 — Robustesse** : tests de guidage et de repères, performance sur la commune entière, hors ligne, RGPD (§13), documentation.
@@ -671,7 +702,7 @@ neyron-tournees/
 │   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js,
 │   │                     #   tabs.js, sheet.js, tourplan.js, report.js, views/ (prepare.js, distribute.js, control.js, common.js) — branche facteur
 │   │                     #   routing.js, itinerary.js, route-worker.js, route-client.js, roads.js, views/route.js — itinéraire (§2 quater)
-│   │                     #   tag-alerts.js, views/tags.js — repères d'adresse
+│   │                     #   tag-alerts.js, views/tags.js — repères d'adresse ; guidance.js, views/navigate.js — navigation
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, roads.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
@@ -1198,3 +1229,8 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - à la fusion, le plus récent l'emporte ; une suppression ne se propage pas d'un appareil à l'autre ;
   - alerte sur la prochaine adresse et à moins de 50 m au GPS, pas plus d'une fois par quart d'heure pour une même adresse ;
   - saisie en pastilles sur deux colonnes, pour tenir à l'écran avec la note.
+- **25/10/2026** — Commit `958493e` (I4). I5 :
+  - pendant la navigation, la capsule d'onglets disparaît et la feuille montre l'arrêt en cours (comme Plans en guidage) ; Terminer ramène à Distribuer ;
+  - « Démarrer » dans l'en-tête de Distribuer, pour ne pas allonger le petit cran ;
+  - le plan suit la position lui-même, car un refus ou une coupure du GPS ne doit pas figer la carte ;
+  - l'approche du premier arrêt peut passer par Plans ou Waze (liens, sans aucun appel réseau de l'app).

@@ -86,9 +86,15 @@
         <div class="page" data-page="root">
           <header class="nav">
             <div class="nav-titles">
-              <h1 id="dist-title" class="nav-title">Tournée</h1>
+              <button id="dist-tour" class="title-btn" type="button" aria-haspopup="dialog">
+                <span id="dist-title" class="nav-title">Tournée</span>
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+              </button>
               <p class="nav-sub"><span id="total-progress" class="num-pill">0</span> adresses traitées</p>
             </div>
+            <button id="nav-start" class="btn filled small start-btn" type="button">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M12 2.8l7 17.4-7-3.9-7 3.9z"/></svg>Démarrer
+            </button>
           </header>
           <div class="page-body">
             <section id="next-card" class="next" data-peek aria-label="Prochaine adresse" aria-live="polite">
@@ -504,6 +510,39 @@
       </div>
 
       <!-- ============================================================ fiche d'adresse -->
+      <div id="view-navigate" class="view navigate" hidden>
+        <div class="page" data-page="root">
+          <header class="nav">
+            <div class="nav-titles">
+              <h1 id="nav-title" class="nav-title"></h1>
+              <p id="nav-sub" class="nav-sub"></p>
+            </div>
+            <button id="nav-stop" class="btn tinted danger-tint small" type="button">Terminer</button>
+          </header>
+          <div class="page-body">
+            <section class="nav-stop" data-peek aria-label="Arrêt en cours">
+              <ul id="nav-addrs" class="group nav-addrs"></ul>
+              <div class="btn-pair">
+                <button id="nav-skip" class="btn tinted" type="button">Arrêt suivant</button>
+                <button id="nav-all" class="btn filled" type="button">Tout l'arrêt distribué</button>
+              </div>
+            </section>
+            <section id="nav-join" class="sec" hidden>
+              <h3 class="sec-head">Rejoindre l'arrêt avec une autre app</h3>
+              <div class="btn-pair">
+                <a id="nav-plans" class="btn tinted" href="#" target="_blank" rel="noopener noreferrer">Plans</a>
+                <a id="nav-waze" class="btn tinted" href="#" target="_blank" rel="noopener noreferrer">Waze</a>
+              </div>
+              <p class="foot">Seules les coordonnées de l'arrêt sont transmises à l'app choisie.</p>
+            </section>
+            <section class="sec">
+              <h3 class="sec-head">Ensuite</h3>
+              <ol id="nav-next" class="group"></ol>
+            </section>
+          </div>
+        </div>
+      </div>
+
       <div id="sheet" class="view addr" hidden aria-live="polite">
         <div class="page" data-page="root">
           <header class="nav">
@@ -553,6 +592,11 @@
         <span>Contrôler</span>
       </button>
     </nav>
+
+    <div id="nav-banner" class="nav-banner glass" hidden role="status" aria-live="polite">
+      <svg class="nav-arrow" viewBox="0 0 24 24" aria-hidden="true"><path id="nav-arrow-path" d=""/></svg>
+      <div class="nav-text"><strong id="nav-dist"></strong><span id="nav-instr"></span></div>
+    </div>
 
     <div id="update-banner" class="banner glass" hidden role="status">
       <span>Nouvelle version disponible</span>

@@ -382,6 +382,13 @@ code { font: 13px ui-monospace, "SF Mono", Menlo, Consolas, monospace; backgroun
 .tag-ring { stroke: #ffffff; stroke-width: 12px; }
 .tag-dot { stroke: var(--repasser); stroke-width: 8px; }
 
+/* navigation : arrêt en cours en orange, arrêts passés estompés */
+.route-stop.current .route-stop-dot { stroke: var(--repasser); }
+.route-stop.current .route-stop-ring { stroke-width: 28px; }
+.route-stop.done { opacity: 0.45; }
+.route-line.ahead { stroke-width: 7px; opacity: 1; }
+.route-casing.ahead { stroke-width: 11px; }
+
 /* zoom faible : points à la place des numéros, pas d'étiquettes */
 .map.z-low .l-numbers, .map.z-low .l-select { display: none; }
 .map:not(.z-low) .l-dots { display: none; }
@@ -1386,6 +1393,79 @@ dialog { color: var(--text); }
 .tag-note .field:focus { box-shadow: inset 0 0 0 2px var(--accent); }
 #tag-dialog .as-btn { width: 100%; }
 .tag-warn { margin: 6px 4px 4px; font-size: 13px; color: var(--repasser); }
+/* Distribuer : tournée (bouton titre), Démarrer */
+.title-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-height: var(--tap);
+  margin: -6px 0 -4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.title-btn .nav-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title-btn .ico { flex: none; width: 22px; height: 22px; color: var(--text-2); stroke-width: 2.4; }
+.start-btn { flex: none; gap: 6px; }
+.start-btn .ico { width: 18px; height: 18px; }
+
+/* navigation : bandeau de consigne entre les boutons de la carte, feuille de l'arrêt en cours, sans capsule d'onglets */
+#app[data-mode="nav"] { --tab-zone: calc(var(--safe-b) + 10px); }
+#app[data-mode="nav"] .tabbar { display: none; }
+.nav-banner {
+  position: absolute;
+  z-index: 37;
+  top: calc(var(--safe-t) + var(--edge));
+  left: calc(var(--edge) + var(--fab) + 8px);
+  right: calc(var(--edge) + var(--fab) + 8px);
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px 8px 10px;
+  border-radius: 24px;
+  background: var(--glass-strong);
+}
+.nav-arrow { flex: none; width: 46px; height: 46px; padding: 6px; border-radius: 14px; background: var(--accent); }
+.nav-arrow path { fill: none; stroke: #ffffff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.nav-text { min-width: 0; display: flex; flex-direction: column; }
+#nav-dist { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1.1; }
+#nav-instr { font-size: 15px; font-weight: 600; line-height: 1.25; }
+#app[data-mode="nav"] .toast { top: calc(var(--safe-t) + var(--edge) + 72px); }
+.nav-stop .btn-pair { margin-bottom: 16px; }
+.nav-addr { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 6px 8px 6px 16px; }
+.nav-addr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.nav-addr-name { font-size: 18px; font-weight: 600; }
+.nav-addr-sub { font-size: 14px; color: var(--text-2); }
+.nav-addr .tag-line { margin-top: 2px; font-size: 14px; }
+.nav-addr.treated .nav-addr-name { color: var(--text-2); font-weight: 500; }
+.round-act {
+  appearance: none;
+  flex: none;
+  width: var(--tap);
+  height: var(--tap);
+  border: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fill);
+  color: var(--accent);
+  cursor: pointer;
+}
+.round-act .ico { width: 22px; height: 22px; stroke-width: 2.6; }
+.round-act.done { background: var(--fait); color: var(--on-status); }
+.round-act:disabled { opacity: 0.35; cursor: default; }
+.nav-addr .badge { flex: none; }
+.nav-next-row { display: flex; min-height: var(--tap); padding: 9px 16px; }
+.nav-next-row .vrow-main { min-width: 0; }
+.nav-next-row .vrow-sub { white-space: normal; }
+
 .tag-alert { gap: 10px; padding: 6px 6px 6px 16px; color: var(--text); background: color-mix(in srgb, var(--repasser) 22%, var(--glass-strong)); }
 .tag-alert > .ico { width: 22px; height: 22px; color: var(--repasser); flex: none; }
 .tag-alert .close-btn { flex: none; }
@@ -1471,6 +1551,7 @@ dialog { color: var(--text); }
   :root { --tab-bottom: 12px; }
   .tabbar { left: calc(var(--safe-l) + 16px + var(--panel-w) / 2); bottom: calc(16px + var(--tab-bottom)); width: calc(var(--panel-w) - 40px); }
   #btn-undo { left: calc(var(--safe-l) + 32px + var(--panel-w)); }
+  .nav-banner { left: calc(var(--safe-l) + 40px + var(--panel-w) + var(--fab)); right: calc(var(--edge) + var(--fab) + 8px); max-width: 560px; }
   .scalebar { left: calc(var(--safe-l) + 44px + var(--panel-w) + var(--fab)); }
   .debug { left: calc(var(--safe-l) + 32px + var(--panel-w)); }
 }

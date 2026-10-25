@@ -297,6 +297,14 @@ test.describe('ergonomie', () => {
     await page.click('#route-stops [data-k="0"] [data-act="more"]');
     expect(await audit(), 'feuille d’actions').toEqual([]);
     await page.keyboard.press('Escape');
+    // navigation : arrêt en cours, Terminer
+    await tab(page, 'distribute').click();
+    await page.click('#nav-start');
+    await expect(page.locator('#view-navigate')).toBeVisible();
+    expect(await audit(), 'navigation').toEqual([]);
+    await page.click('#nav-stop');
+    await page.click('#confirm-ok');
+    await expect(page.locator('#tabbar')).toBeVisible();
 
     await tab(page, 'control').click();
     await setDetent(page, 'large');

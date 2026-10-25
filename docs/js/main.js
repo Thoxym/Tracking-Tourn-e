@@ -14,6 +14,7 @@ import { DistributeView } from './views/distribute.js';
 import { PrepareView } from './views/prepare.js';
 import { RouteView } from './views/route.js';
 import { TagsView } from './views/tags.js';
+import { NavigateView } from './views/navigate.js';
 import { TagAlerts } from './tag-alerts.js';
 import { WakeLockController } from './wakelock.js';
 
@@ -47,6 +48,7 @@ async function start() {
     app.distribute = new DistributeView(app);
     app.control = new ControlView(app);
     app.tags = new TagsView(app);
+    app.nav = new NavigateView(app);
     app.debug = new DebugPanel(app);
     window.neyronApp = app;  // accès pour les tests
     splash.hidden = true;
