@@ -1,7 +1,7 @@
 // Navigation de tournée (Distribuer › Démarrer) : choix de la tournée, démarrage avec ou sans itinéraire, arrêt en
 // cours, consignes, arrivée, arrêt suivant automatique, hors itinéraire, repère annoncé, fin.
 const { test, expect } = require('@playwright/test');
-const { trackErrors, openApp, tourIds } = require('./helpers');
+const { trackErrors, openApp, waitReady, tourIds } = require('./helpers');
 
 const nav = (page) => page.evaluate(() => {
   const n = window.neyronApp.nav;
@@ -76,9 +76,10 @@ test('démarrer, consignes, arrivée, arrêt suivant automatique, annuler, saute
   await page.click('#nav-skip');
   await expect(page.locator('#nav-title')).toHaveText(`Arrêt 3/${n}`);
 
-  // Terminer : confirmation (adresses restantes), retour à Distribuer
+  // Quitter › Terminer la tournée : retour à Distribuer, plus de reprise proposée
   await page.click('#nav-stop');
-  await page.click('#confirm-ok');
+  await page.locator('#as-list .as-btn', { hasText: 'Terminer la tournée' }).click();
+  await expect(page.locator('#nav-start-label')).toHaveText('Démarrer');
   await expect(page.locator('#tabbar')).toBeVisible();
   await expect(page.locator('#nav-banner')).toBeHidden();
   await expect(page.locator('#view-distribute')).toBeVisible();
@@ -136,4 +137,79 @@ test('repère sur un arrêt : annoncé quand il devient l\'arrêt en cours', asy
   await expect(page.locator('#tag-alert-msg')).toContainText('Chien — Grand chien');
   await expect(page.locator(`#nav-addrs [data-id="${ids[1][0]}"] .tag-line`)).toHaveText('Chien — Grand chien');
   expect(ids.flat().length).toBe(tourIds().size);
+});
+
+test('quitter en pause puis reprendre à l\'arrêt en cours, même après une relance', async ({ page }) => {
+  await openApp(page);
+  await startNav(page);
+  const ids = await page.evaluate(() => window.neyronApp.nav.stops.map((s) => s.ids));
+  await page.evaluate((list) => window.neyronApp.store.setStatus(list, 'fait'), ids[0]);
+  await expect(page.locator('#nav-title')).toHaveText(/^Arrêt 2\//);
+  await page.click('#nav-skip');
+  await expect(page.locator('#nav-title')).toHaveText(/^Arrêt 3\//);
+  await page.click('#nav-stop');
+  await expect(page.locator('#as-msg')).toContainText('l\'arrêt 3');
+  await page.locator('#as-list .as-btn', { hasText: 'Mettre en pause' }).click();
+  await expect(page.locator('#tabbar')).toBeVisible();
+  await expect(page.locator('#nav-start-label')).toHaveText('Reprendre · arrêt 3');
+  await page.reload();
+  await waitReady(page);
+  await page.click('#tabbar [data-tab="distribute"]');
+  await expect(page.locator('#nav-start-label')).toHaveText('Reprendre · arrêt 3');
+  await page.click('#nav-start');
+  await expect.poll(async () => (await nav(page)).active).toBe(true);
+  await expect(page.locator('#nav-title')).toHaveText(/^Arrêt 3\//);
+  // l'arrêt sauté (2) revient après la fin de l'itinéraire, pas avant
+  await page.click('#nav-stop');
+  await page.locator('#as-list .as-btn', { hasText: 'Terminer la tournée' }).click();
+  await expect(page.locator('#nav-start-label')).toHaveText('Démarrer');
+  await page.reload();
+  await waitReady(page);
+  await expect(page.locator('#nav-start-label')).toHaveText('Démarrer');
+});
+
+test('simulation : la position avance seule, pause, vitesse, arrêt suivant et précédent, rien d\'enregistré', async ({ page }) => {
+  const errors = trackErrors(page);
+  await openApp(page);
+  await page.evaluate(async () => { await window.neyronApp.route.compute(300); });
+  await expect.poll(() => page.evaluate(() => window.neyronApp.store.activeTour.route?.stops?.length || 0), { timeout: 30_000 }).toBeGreaterThan(0);
+  await page.click('#tabbar [data-tab="distribute"]');
+  await expect(page.locator('#nav-sim')).toBeVisible();
+  await page.click('#nav-sim');
+  await expect.poll(async () => (await nav(page)).active).toBe(true);
+  await expect(page.locator('#sim-bar')).toBeVisible();
+  await expect(page.locator('#nav-title')).toHaveText(/^Simulation · Arrêt 1\//);
+  await expect(page.locator('#btn-undo')).toBeHidden();  // rien à annuler en simulation
+  // vitesse : ×1 -> ×2 -> ×4 -> ×8
+  for (const v of ['×2', '×4', '×8']) {
+    await page.click('#sim-speed');
+    await expect(page.locator('#sim-speed')).toHaveText(v);
+  }
+  // accélération de test : les arrêts défilent seuls
+  await page.evaluate(() => { window.neyronApp.nav.simulator.factor = 40; });
+  await expect.poll(async () => (await nav(page)).k, { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+  // pause : la position ne bouge plus
+  await page.click('#sim-play');
+  await expect(page.locator('#sim-play')).toHaveAttribute('aria-label', 'Lecture');
+  const p1 = await page.evaluate(() => window.neyronApp.gps.tracker.last);
+  await page.waitForTimeout(600);
+  const p2 = await page.evaluate(() => window.neyronApp.gps.tracker.last);
+  expect([p2.x, p2.y]).toEqual([p1.x, p1.y]);
+  const k = (await nav(page)).k;
+  await page.click('#sim-next');
+  await expect.poll(async () => (await nav(page)).k).toBe(k + 1);
+  await page.click('#sim-prev');
+  await expect.poll(async () => (await nav(page)).k).toBe(k);
+  // statuts simulés sur le plan, mais pas dans le journal
+  const r = await page.evaluate(() => ({ events: window.neyronApp.store.events.length, sim: window.neyronApp.nav.simState.size }));
+  expect(r.events).toBe(0);
+  expect(r.sim).toBeGreaterThan(0);
+  await expect(page.locator('.l-numbers .num.st-fait').first()).toBeAttached();
+  await page.click('#sim-quit');
+  await expect(page.locator('#sim-bar')).toBeHidden();
+  await expect(page.locator('#tabbar')).toBeVisible();
+  await expect(page.locator('.l-numbers .num.st-fait')).toHaveCount(0);  // plan rendu aux statuts réels
+  expect(await page.evaluate(() => window.neyronApp.store.events.length)).toBe(0);
+  await expect(page.locator('#nav-start-label')).toHaveText('Démarrer');  // une simulation ne laisse pas de reprise
+  expect(errors).toEqual([]);
 });

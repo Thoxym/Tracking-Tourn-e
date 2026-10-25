@@ -70,9 +70,9 @@ test.describe('GPS autorisé', () => {
     await expect.poll(() => centerError(page, ID.gare9), 'carte recentrée sur la nouvelle position').toBeLessThan(3);
 
     const box = await page.locator('#map').boundingBox();
-    await page.mouse.move(box.x + box.width / 2, box.y + 250);
+    await page.mouse.move(box.x + box.width * 0.6, box.y + 120);  // dans le plan, au-dessus de la feuille
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + 60, box.y + 290, { steps: 5 });
+    await page.mouse.move(box.x + box.width * 0.6 + 60, box.y + 160, { steps: 5 });
     await page.mouse.up();
     await expect(page.locator('#btn-locate')).toHaveAttribute('data-mode', 'on');
 

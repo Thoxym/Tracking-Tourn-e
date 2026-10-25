@@ -586,7 +586,23 @@ Pourquoi pas Dijkstra seul : il donne le plus court chemin entre deux points. L'
     - repère annoncé à l'arrêt.
 
     Audit des cibles de 44 px étendu à la vue de navigation.
-- [ ] **I5 bis — Simulation** : même vue, position simulée le long du tracé, pause, ×1 à ×8, arrêt précédent / suivant, sans écrire dans le journal.
+- [x] **I5 bis — Simulation, quitter et reprendre** ✅ (25/10/2026).
+  - **Distribuer** : une ligne de boutons sous le titre, « Démarrer » (ou « Reprendre · arrêt k ») et « Simuler » (visible si un itinéraire est calculé). Le titre de la tournée n'est plus tronqué. « Simuler la tournée » aussi dans Préparer › Itinéraire.
+  - **Quitter** (bouton de la feuille de navigation, feuille d'actions) :
+    - **Mettre en pause** : l'arrêt en cours est mémorisé (`localStorage['neyron-tournees.nav'] = {tour, k, at}`, écrit à chaque arrêt). « Reprendre · arrêt k » ramène à cet arrêt, même après une relance ou une fermeture de l'app ; si l'arrêt est fini, on passe au suivant ouvert.
+    - **Terminer la tournée** : la reprise est effacée (c'est aussi le cas quand tout est traité).
+    - La progression est conservée dans les deux cas. Une app fermée en pleine navigation propose aussi « Reprendre ».
+  - **Simulation** (`js/simulator.js`, `Simulator`) : même vue que la navigation (bandeau, arrêt, tracé, alertes des repères).
+    - La position avance seule le long du trajet (`gps.simulate`) : voiture 30 km/h, vélo à la vitesse des réglages, à pied à la vitesse de marche.
+    - À chaque arrêt, elle reste le temps de service prévu, puis sert l'arrêt.
+    - **Capsule de commandes** en verre sous le bandeau : arrêt précédent, lecture / pause, arrêt suivant, vitesse ×1 / ×2 / ×4 / ×8, quitter. Le titre de la feuille indique « Simulation · Arrêt k/N ».
+    - **Rien n'est enregistré** : statuts simulés en mémoire (`nav.status`, `nav.simState`) et montrés sur le plan (`map.applyStatuses`). Le plan revient aux statuts réels en quittant. Pas d'Annuler, pas de reprise mémorisée, GPS remis comme avant.
+  - Petit cran plafonné à 68 % de l'écran (au lieu de 62 %), pour la ligne de boutons de Distribuer sur les petits écrans.
+  - **Tests** (`tests/guidage.spec.js`) :
+    - pause, relance de l'app, reprise à l'arrêt mémorisé, Terminer qui efface la reprise ;
+    - simulation : vitesses, défilement seul, pause (position figée), arrêts suivant et précédent, journal vide, plan rendu aux statuts réels.
+
+    Audit des cibles étendu à « Quitter la tournée » et à la capsule de simulation.
 - [ ] **I6 — Voix et carte orientée** : `speechSynthesis`, rotation de la carte, repli « nord en haut ».
 - [ ] **I7 — Robustesse** : tests de guidage et de repères, performance sur la commune entière, hors ligne, RGPD (§13), documentation.
 
@@ -702,7 +718,7 @@ neyron-tournees/
 │   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js,
 │   │                     #   tabs.js, sheet.js, tourplan.js, report.js, views/ (prepare.js, distribute.js, control.js, common.js) — branche facteur
 │   │                     #   routing.js, itinerary.js, route-worker.js, route-client.js, roads.js, views/route.js — itinéraire (§2 quater)
-│   │                     #   tag-alerts.js, views/tags.js — repères d'adresse ; guidance.js, views/navigate.js — navigation
+│   │                     #   tag-alerts.js, views/tags.js — repères d'adresse ; guidance.js, views/navigate.js, simulator.js — navigation
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, roads.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
@@ -1103,7 +1119,7 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
 | Sauvegarde JSON | partagée à la main | tout le journal horodaté, identifiant d'appareil aléatoire | mention « à garder pour vous, ce n'est pas un rapport » |
 | Position GPS | mémoire seulement | — | jamais stockée ni exportée ; masquée dans le diagnostic copié |
 | Repères d'adresse (I4) | `meta.tags`, sur l'appareil ; sauvegarde | 8 codes fermés (« chien »…) et une note de 60 caractères au plus, par adresse | foyer identifiable : avertissement sous la note (rien sur les personnes, aucun code d'accès) ; **jamais dans le rapport** ; liste à revoir et « Tout supprimer » dans Préparer › Repères |
-| Préférences (`localStorage`) | appareil | thème, onglet, réglages de charge, reprise, heures du rapport | aucune donnée personnelle |
+| Préférences (`localStorage`) | appareil | thème, onglet, réglages de charge, heures du rapport, tournée en pause (id de tournée et numéro d'arrêt, I5 bis) | aucune donnée personnelle |
 
 - Aucun flux réseau nouveau : CSP inchangée, aucun service tiers, tout reste sur l'appareil.
 - **Conservation limitée** (validée le 25/10/2026) : `store.purge()` efface, à chaque lancement et après chaque import, les événements antérieurs à la dernière clôture de plus de **60 jours** de chaque tournée (`RETENTION_DAYS`, durée recommandée par la CNIL pour le suivi d'activité d'un salarié).
@@ -1234,3 +1250,7 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - « Démarrer » dans l'en-tête de Distribuer, pour ne pas allonger le petit cran ;
   - le plan suit la position lui-même, car un refus ou une coupure du GPS ne doit pas figer la carte ;
   - l'approche du premier arrêt peut passer par Plans ou Waze (liens, sans aucun appel réseau de l'app).
+- **25/10/2026** — Commit `100dcc4` (I5). I5 bis, avec la demande de l'utilisateur de pouvoir quitter puis reprendre une tournée :
+  - « Quitter » propose la pause (reprise à l'arrêt mémorisé, même après une relance) ou la fin ;
+  - la reprise est une préférence d'appareil (`localStorage`), comme l'onglet : elle ne voyage pas avec la sauvegarde ;
+  - la simulation passe par la même vue et la même source de position que le GPS, sans rien écrire dans le journal.

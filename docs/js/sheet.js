@@ -139,7 +139,7 @@ export class Panel {
       peek = (head ? head.offsetHeight : 0) + (body ? body.offsetTop - (head ? head.offsetTop + head.offsetHeight : 0) : 0)
         + markBottom + tabZone + 10;
     }
-    peek = Math.round(Math.min(Math.max(peek, 150), H * 0.62, large));
+    peek = Math.round(Math.min(Math.max(peek, 150), H * 0.68, large));
     const medium = Math.round(Math.min(Math.max(H * 0.52, peek + 60), large));
     return { peek, medium, large };
   }

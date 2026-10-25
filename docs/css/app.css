@@ -1411,8 +1411,10 @@ dialog { color: var(--text); }
 }
 .title-btn .nav-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .title-btn .ico { flex: none; width: 22px; height: 22px; color: var(--text-2); stroke-width: 2.4; }
-.start-btn { flex: none; gap: 6px; }
-.start-btn .ico { width: 18px; height: 18px; }
+.dist-actions { display: flex; gap: 10px; margin: 0 0 14px; }
+.start-btn { flex: 1; gap: 8px; }
+.start-btn .ico, .sim-btn .ico { width: 18px; height: 18px; }
+.sim-btn { flex: none; gap: 6px; padding: 0 18px; }
 
 /* navigation : bandeau de consigne entre les boutons de la carte, feuille de l'arrêt en cours, sans capsule d'onglets */
 #app[data-mode="nav"] { --tab-zone: calc(var(--safe-b) + 10px); }
@@ -1465,6 +1467,27 @@ dialog { color: var(--text); }
 .nav-next-row { display: flex; min-height: var(--tap); padding: 9px 16px; }
 .nav-next-row .vrow-main { min-width: 0; }
 .nav-next-row .vrow-sub { white-space: normal; }
+
+/* simulation : capsule de commandes sous le bandeau de consigne ; pas d'Annuler (rien n'est enregistré) */
+.sim-bar {
+  position: absolute;
+  z-index: 37;
+  top: calc(var(--safe-t) + var(--edge) + 100px);
+  left: calc(var(--edge) + var(--fab) + 8px);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 0 4px;
+}
+.sim-bar .cap-btn { width: var(--tap); height: var(--tap); }
+.sim-bar .cap-btn::before { display: none; }
+.sim-speed { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
+#sim-play[data-playing="true"] .ico-play, #sim-play[data-playing="false"] .ico-pause { display: none; }
+#app[data-sim] #btn-undo { visibility: hidden; }
+#app[data-sim] .toast { top: calc(var(--safe-t) + var(--edge) + 154px); }
+@media (min-width: 900px) {
+  .sim-bar { left: calc(var(--safe-l) + 40px + var(--panel-w) + var(--fab)); }
+}
 
 .tag-alert { gap: 10px; padding: 6px 6px 6px 16px; color: var(--text); background: color-mix(in srgb, var(--repasser) 22%, var(--glass-strong)); }
 .tag-alert > .ico { width: 22px; height: 22px; color: var(--repasser); flex: none; }

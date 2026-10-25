@@ -5,12 +5,16 @@
 // - Plan : suivi de la position (GPS), trajet jusqu'à l'arrêt en gras, suite de l'itinéraire, arrêts numérotés.
 // - Hors itinéraire (écart au tracé pendant quelques secondes, position précise) : nouveau trajet jusqu'à l'arrêt.
 // La source de position est le GPS (ou une position simulée : panneau debug, simulation de tournée).
+// Quitter : mettre en pause (l'arrêt en cours est mémorisé, « Reprendre » dans Distribuer, même après une relance)
+// ou terminer. Simulation : même vue, position qui avance seule le long de l'itinéraire (js/simulator.js), statuts
+// gardés en mémoire seulement : le journal, l'annulation et le rapport ne sont pas touchés.
 
 import { evaluateStops, planContext, routeLines } from '../itinerary.js';
 import { buildLeg, formatDist, instruction, locate, nextManeuver, reroute } from '../guidance.js';
 import { loadRoads } from '../roads.js';
 import { ST_AGAIN, ST_ANOMALY, ST_DONE, isTreated } from '../store.js';
 import { formatDuration } from '../tourplan.js';
+import { Simulator } from '../simulator.js';
 import { addressLabel } from '../ui.js';
 import { guard, num, plural, showAddress } from './common.js';
 
@@ -21,6 +25,23 @@ const ARRIVE_M = { car: 30, bike: 25, foot: 20 };
 const MAX_ACC_M = 25;
 const LOCK_MS = 500;
 const STATUS_TEXT = { [ST_DONE]: 'distribuée', [ST_ANOMALY]: 'anomalie', [ST_AGAIN]: 'à repasser' };
+const SESSION_KEY = 'neyron-tournees.nav';  // tournée en cours de guidage : {tour, k, at} (préférence d'appareil)
+
+function readSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+    return s && typeof s.tour === 'string' && Number.isInteger(s.k) ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSession(s) {
+  try {
+    if (s) localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+    else localStorage.removeItem(SESSION_KEY);
+  } catch { /* stockage indisponible : pas de reprise après relance */ }
+}
 
 // flèches du bandeau (repère 24 × 24, trait)
 const ARROWS = {
@@ -73,8 +94,17 @@ export class NavigateView {
     this.active = false;
     this.offRouteMs = 5000;  // écart au tracé toléré avant recalcul (réglable pour les tests)
     this.lockUntil = 0;
-    guard(this, ['startFlow', 'pickTour', 'start', 'stopFlow', 'skip', 'allDone', 'act', 'more']);
+    this.sim = false;         // simulation en cours
+    this.simState = new Map(); // statuts simulés (mémoire seulement)
+    this.session = readSession();
+    guard(this, ['startFlow', 'pickTour', 'start', 'stopFlow', 'skip', 'allDone', 'act', 'more', 'simulate']);
     $('nav-start').addEventListener('click', () => this.startFlow());
+    $('nav-sim').addEventListener('click', () => this.simulate());
+    $('sim-play').addEventListener('click', () => this.simulator?.toggle());
+    $('sim-next').addEventListener('click', () => this.simNext());
+    $('sim-prev').addEventListener('click', () => this.simPrev());
+    $('sim-speed').addEventListener('click', () => this.simulator?.cycleSpeed());
+    $('sim-quit').addEventListener('click', () => this.stop('sim'));
     $('dist-tour').addEventListener('click', () => this.pickTour());
     $('nav-stop').addEventListener('click', () => this.stopFlow());
     $('nav-skip').addEventListener('click', () => this.skip());
@@ -84,9 +114,40 @@ export class NavigateView {
     // le plan suit la position pendant la navigation ; un glisser à la main suspend le suivi (Localiser le reprend)
     app.map.on('userpan', () => { this.follow = false; });
     $('btn-locate').addEventListener('click', () => { this.follow = true; });
+    app.store.onChange((d) => { if (d?.type === 'tour' || d?.type === 'import') this.updateStartButton(); });
+    this.updateStartButton();
   }
 
   get tour() { return this.app.store.activeTour; }
+
+  // statut d'une adresse : réel, ou simulé pendant une simulation
+  status(id) {
+    return this.sim && this.simState.has(id) ? this.simState.get(id) : this.app.store.status(id);
+  }
+
+  // tournée mise en pause (ou interrompue) pour la tournée active, avec un itinéraire : « Reprendre »
+  resumable() {
+    const s = this.session;
+    return s && s.tour === this.tour?.id && this.tour.route?.stops?.length ? s : null;
+  }
+
+  updateStartButton() {
+    const s = this.resumable();
+    $('nav-start-label').textContent = s ? 'Reprendre' : 'Démarrer';
+    $('nav-start-label').textContent = s ? `Reprendre · arrêt ${s.k + 1}` : 'Démarrer';
+    $('nav-start').setAttribute('aria-label', s ? `Reprendre la tournée à l'arrêt ${s.k + 1}` : 'Démarrer la tournée');
+    $('nav-sim').hidden = !this.tour?.route?.stops?.length;
+  }
+
+  _saveSession() {
+    this.session = this.sim ? this.session : { tour: this.tour.id, k: this.k, at: Date.now() };
+    if (!this.sim) writeSession(this.session);
+  }
+
+  _clearSession() {
+    this.session = null;
+    writeSession(null);
+  }
 
   // ----------------------------------------------------- tournée, démarrage
 
@@ -114,7 +175,17 @@ export class NavigateView {
       } else if (v === 'plain') this.startPlain();
       return;
     }
-    await this.start();
+    const s = this.resumable();
+    await this.start(s ? { resumeK: s.k } : {});
+  }
+
+  // simulation : même vue que la navigation, position simulée qui avance seule
+  async simulate() {
+    if (!this.tour.route?.stops?.length) {
+      this.app.ui.toast('Calculez d\'abord l\'itinéraire dans Préparer.');
+      return;
+    }
+    await this.start({ sim: true });
   }
 
   // sans itinéraire : écran allumé et suivi de la position, la prochaine adresse reste proposée dans Distribuer
@@ -126,8 +197,9 @@ export class NavigateView {
     ui.toast('Tournée démarrée : suivez la prochaine adresse proposée.', { ms: 4000 });
   }
 
-  async start() {
+  async start({ sim = false, resumeK = null } = {}) {
     const { gps, wake, panel, ui } = this.app;
+    if (this.active) this.stop(this.sim ? 'sim' : 'pause');
     const route = this.tour.route;
     const { graph, snap } = await loadRoads();
     if (route.roadsVersion !== graph.version) {
@@ -144,8 +216,14 @@ export class NavigateView {
       return { ...s, ids: keep.map((k) => s.ids[k]), sides: keep.map((k) => s.sides[k]) };
     }).filter((s) => s.ids.length);
     this.ev = evaluateStops(this.plan, this.stops);
-    const k = this._firstOpen(0);
+    this.sim = sim;
+    this.simState = new Map();
+    const open = (j) => j >= 0 && j < this.stops.length && this.stops[j].ids.some((id) => !isTreated(this.status(id)));
+    const k = resumeK !== null && open(resumeK) ? resumeK : this._firstOpen(resumeK ?? 0);
     if (k < 0) {
+      this.sim = false;
+      if (!sim) this._clearSession();
+      this.updateStartButton();
       ui.toast('Toutes les adresses de la tournée sont déjà traitées.');
       return;
     }
@@ -156,32 +234,67 @@ export class NavigateView {
     this.heading = null;
     this.follow = true;
     $('app').dataset.mode = 'nav';
+    if (sim) $('app').dataset.sim = '';
     $('nav-banner').hidden = false;
+    $('sim-bar').hidden = !sim;
     ui.closeSheet();
-    if (wake.supported && !wake.wanted) wake.enable();  // geste de l'utilisateur : la demande peut aboutir
-    if (gps.mode === 'off') gps.start();
-    gps.setMode('follow');
+    this.gpsBefore = gps.mode;
+    if (sim) {
+      this.simulator = new Simulator(this);
+    } else {
+      if (wake.supported && !wake.wanted) wake.enable();  // geste de l'utilisateur : la demande peut aboutir
+      if (gps.mode === 'off') gps.start();
+      gps.setMode('follow');
+    }
     panel.show(this.view, 'peek');
     this._goto(k, { fromRoute: true });
+    if (sim) {
+      this.simulator.start(k);
+      ui.toast('Simulation : rien n\'est enregistré dans la tournée.', { ms: 3000 });
+    } else if (resumeK !== null) ui.toast(`Tournée reprise à l'arrêt ${k + 1}`, { ms: 3000 });
   }
 
-  // fin de la navigation (confirmée si des adresses restent à traiter)
+  // Quitter : mettre en pause (reprise plus tard, à cet arrêt) ou terminer la tournée ; simulation : quitter
   async stopFlow() {
-    const left = this.stops.slice(this.k).flatMap((s) => s.ids).filter((id) => !isTreated(this.app.store.status(id))).length;
-    if (left && !(await this.app.ui.confirm(`Terminer le guidage ? ${plural(left, 'adresse reste', 'adresses restent')} à traiter ; la progression est conservée.`, 'Terminer'))) return;
-    this.stop();
+    if (this.sim) {
+      this.stop('sim');
+      return;
+    }
+    const left = this.stops.flatMap((s) => s.ids).filter((id) => !isTreated(this.status(id))).length;
+    const v = await this.app.ui.actionSheet('Quitter la tournée', [
+      { label: 'Mettre en pause', value: 'pause' },
+      { label: 'Terminer la tournée', value: 'end', destructive: true },
+    ], { message: `${plural(left, 'adresse reste', 'adresses restent')} à traiter. En pause, « Reprendre » vous ramène à l'arrêt ${this.k + 1}, même après avoir fermé l'app. La progression est conservée dans les deux cas.` });
+    if (v === 'pause') {
+      this.stop('pause');
+      this.app.ui.toast(`Tournée en pause à l'arrêt ${this.k + 1} : « Reprendre » pour continuer`, { ms: 4000 });
+    } else if (v === 'end') this.stop('end');
   }
 
-  stop() {
+  // why : 'pause' (reprise possible), 'end' (terminée), 'sim' (fin de simulation)
+  stop(why = 'pause') {
     if (!this.active) return;
     const { map, gps, panel, tabs, ui } = this.app;
     this.active = false;
+    clearTimeout(this._advance);
+    if (why === 'end') this._clearSession();
+    if (this.sim) {
+      this.simulator?.stop();
+      this.simulator = null;
+      this.sim = false;
+      this.simState = new Map();
+      if (this.gpsBefore === 'off') gps.stop();  // position simulée retirée
+      ui.refresh();  // statuts réels sur le plan
+    }
     delete $('app').dataset.mode;
+    delete $('app').dataset.sim;
     $('nav-banner').hidden = true;
+    $('sim-bar').hidden = true;
     map.setRoute(null);
     if (gps.mode === 'follow') gps.setMode('on');
     panel.show(tabs.view());
     ui.updatePadding();
+    this.updateStartButton();
     this.app.distribute?.render();
   }
 
@@ -189,8 +302,7 @@ export class NavigateView {
 
   // premier arrêt à partir de `from` qui a une adresse non traitée ; puis ceux sautés avant ; -1 : tout est traité
   _firstOpen(from) {
-    const { store } = this.app;
-    const open = (s) => s.ids.some((id) => !isTreated(store.status(id)));
+    const open = (s) => s.ids.some((id) => !isTreated(this.status(id)));
     for (let k = from; k < this.stops.length; k++) if (open(this.stops[k])) return k;
     for (let k = 0; k < from && k < this.stops.length; k++) if (open(this.stops[k])) return k;
     return -1;
@@ -204,6 +316,7 @@ export class NavigateView {
     if (this.pos && !contiguous) this._reroute();
     else this._setLeg(this.ev.legs[k]?.arcs);
     this.prevK = k;
+    this._saveSession();
     this.render();
     this._drawMap();
     this.renderBanner();
@@ -211,7 +324,7 @@ export class NavigateView {
     // sans position : le plan montre l'arrêt
     if (!this.pos) this.app.map.centerOn(this.stops[k].x, this.stops[k].y, { minK: 2.5 });
     // repère à cet arrêt : alerte
-    const tagged = this.stops[k].ids.find((id) => this.app.store.tagsOf(id) && !isTreated(this.app.store.status(id)));
+    const tagged = this.stops[k].ids.find((id) => this.app.store.tagsOf(id) && !isTreated(this.status(id)));
     if (tagged) this.app.alerts?.alert(this.app.map.byId.get(tagged));
   }
 
@@ -245,11 +358,15 @@ export class NavigateView {
   }
 
   async allDone() {
-    const { store, ui } = this.app;
+    const { ui } = this.app;
     if (Date.now() < this.lockUntil) return;
     this.lockUntil = Date.now() + LOCK_MS;
-    const left = this.stops[this.k].ids.filter((id) => !isTreated(store.status(id)));
+    const left = this.stops[this.k].ids.filter((id) => !isTreated(this.status(id)));
     if (!left.length) return;
+    if (this.sim) {
+      this.simMark(left, ST_DONE);
+      return;
+    }
     const action = await ui.setStatus(left, ST_DONE);
     if (action) ui.toast(`Arrêt ${this.k + 1} : ${plural(left.length, 'adresse distribuée', 'adresses distribuées')}`, { undo: true });
   }
@@ -257,30 +374,81 @@ export class NavigateView {
   async act(a, st) {
     if (Date.now() < this.lockUntil) return;
     this.lockUntil = Date.now() + LOCK_MS;
-    await this.app.ui.markAddress(a, st);
+    if (this.sim) this.simMark([a.id], st);
+    else await this.app.ui.markAddress(a, st);
   }
 
   async more(a) {
-    const { ui, store } = this.app;
-    const st = store.status(a.id);
+    const { ui } = this.app;
+    const st = this.status(a.id);
     const items = [{ label: 'Anomalie…', value: 'anomaly' }];
     if (st !== ST_AGAIN) items.push({ label: 'À repasser', value: 'again' });
     if (st === ST_DONE || st === ST_ANOMALY) items.push({ label: 'Remettre à faire', value: 'todo' });
     items.push({ label: 'Fiche de l\'adresse', value: 'sheet' });
     const v = await ui.actionSheet(addressLabel(a, ui.streets), items);
+    if (this.sim && v && v !== 'sheet') {
+      if (v === 'anomaly') {
+        const why = await ui.pickReason(a);
+        if (why) this.simMark([a.id], ST_ANOMALY);
+      } else this.simMark([a.id], v === 'again' ? ST_AGAIN : 'a_faire');
+      return;
+    }
     if (v === 'anomaly') await ui.markAnomaly(a);
     else if (v === 'again') await ui.markAddress(a, ST_AGAIN);
     else if (v === 'todo') await ui.markAddress(a, 'a_faire');
     else if (v === 'sheet') showAddress(this.app, a);
   }
 
+  // ---------------------------------------------------------- simulation
+
+  // statuts simulés (mémoire) : plan et arrêt mis à jour, arrêt suivant si celui-ci est fini
+  simMark(ids, st) {
+    for (const id of ids) {
+      if (st === 'a_faire') this.simState.delete(id);
+      else this.simState.set(id, st);
+    }
+    this.app.map.applyStatuses((id) => this.status(id));
+    this._afterChange();
+  }
+
+  // arrêt en cours servi d'un coup (fin de l'arrêt simulé, ou « arrêt suivant »)
+  simServe() {
+    const left = this.stops[this.k].ids.filter((id) => !isTreated(this.status(id)));
+    if (left.length) this.simMark(left, ST_DONE);
+    else this._afterChange();
+  }
+
+  simNext() {
+    if (!this.sim) return;
+    this.simulator.resetLeg();
+    this.simServe();
+  }
+
+  // arrêt précédent : ses adresses (et celles de l'arrêt en cours) redeviennent à faire, on y retourne
+  simPrev() {
+    if (!this.sim) return;
+    const k2 = Math.max(0, this.k - 1);
+    for (const j of [k2, this.k]) for (const id of this.stops[j].ids) this.simState.delete(id);
+    this.app.map.applyStatuses((id) => this.status(id));
+    clearTimeout(this._advance);
+    const from = this.stops[k2 - 1] || this.stops[k2];
+    this.pos = null;
+    this.prevK = k2 - 1;  // trajet de l'itinéraire depuis l'arrêt d'avant
+    this.simulator.jump(from.x, from.y);
+    this._goto(k2);
+  }
+
   onStore(d) {
     if (!this.active) return;
     if (d?.type === 'tour' && d.change?.includes('active')) {
-      this.stop();
+      this.stop(this.sim ? 'sim' : 'pause');
       return;
     }
-    const done = this.stops[this.k].ids.every((id) => isTreated(this.app.store.status(id)));
+    if (!this.sim) this._afterChange();
+  }
+
+  _afterChange() {
+    const done = this.stops[this.k].ids.every((id) => isTreated(this.status(id)));
     if (!done) {
       this.render();
       return;
@@ -292,8 +460,9 @@ export class NavigateView {
       if (!this.active) return;
       const k = this._firstOpen(this.k + 1);
       if (k < 0) {
-        this.app.ui.toast('Tournée terminée : toutes les adresses sont traitées.', { ms: 5000 });
-        this.stop();
+        this.app.ui.toast(this.sim ? 'Simulation terminée : tous les arrêts sont servis.'
+          : 'Tournée terminée : toutes les adresses sont traitées.', { ms: 5000 });
+        this.stop(this.sim ? 'sim' : 'end');
       } else this._goto(k);
     }, 400);
   }
@@ -372,11 +541,10 @@ export class NavigateView {
 
   // temps restant : arrêts encore à servir (trajet + part du service)
   remaining() {
-    const { store } = this.app;
     let sec = 0;
     this.stops.forEach((s, k) => {
       if (k < this.k) return;
-      const n = s.ids.filter((id) => !isTreated(store.status(id))).length;
+      const n = s.ids.filter((id) => !isTreated(this.status(id))).length;
       if (n) sec += s.legSec + (s.service * n) / s.ids.length;
     });
     return sec;
@@ -392,7 +560,7 @@ export class NavigateView {
       this.app.panel.layout();  // le sous-titre peut changer de nombre de lignes : petit cran recalculé
     }
     // rejoindre le premier arrêt avec une autre app (loin, ou position inconnue)
-    const join = this.k === this.startK && (far === null || far > 300);
+    const join = !this.sim && this.k === this.startK && (far === null || far > 300);
     $('nav-join').hidden = !join;
     if (join) {
       const { lat, lon } = toLonLat(this.app.data, s.x, s.y);
@@ -404,13 +572,13 @@ export class NavigateView {
 
   render() {
     if (!this.active) return;
-    const { map, store, ui } = this.app;
+    const { map, ui } = this.app;
     const s = this.stops[this.k];
-    $('nav-title').textContent = `Arrêt ${this.k + 1}/${this.stops.length}`;
+    $('nav-title').textContent = `${this.sim ? 'Simulation · ' : ''}Arrêt ${this.k + 1}/${this.stops.length}`;
     this._renderSub();
     $('nav-addrs').replaceChildren(...s.ids.map((id, i) => {
       const a = map.byId.get(id);
-      const st = store.status(id);
+      const st = this.status(id);
       const treated = isTreated(st);
       const li = document.createElement('li');
       li.className = `nav-addr${treated ? ' treated' : ''}`;
@@ -443,14 +611,14 @@ export class NavigateView {
       }
       return li;
     }));
-    const left = s.ids.filter((id) => !isTreated(store.status(id))).length;
+    const left = s.ids.filter((id) => !isTreated(this.status(id))).length;
     $('nav-all').disabled = !left;
     $('nav-all').textContent = left > 1 ? `Tout l'arrêt distribué (${left})` : 'Distribué';
     $('nav-all').hidden = left <= 1 && s.ids.length === 1;  // une seule adresse : le bouton de la ligne suffit
     // arrêts suivants
     const next = [];
     for (let k = this.k + 1; k < this.stops.length && next.length < 3; k++) {
-      if (!this.stops[k].ids.some((id) => !isTreated(store.status(id)))) continue;
+      if (!this.stops[k].ids.some((id) => !isTreated(this.status(id)))) continue;
       const li = document.createElement('li');
       li.className = 'nav-next-row';
       const main = span('vrow-main', '');

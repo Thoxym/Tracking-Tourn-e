@@ -78,6 +78,7 @@ export class RouteView {
     $('route-more').addEventListener('click', () => this.compute(BUDGET_MORE));
     $('route-clear').addEventListener('click', () => this.clear());
     $('route-show').addEventListener('click', () => this.show());
+    $('route-sim').addEventListener('click', () => this.app.nav.simulate());
     $('route-update').addEventListener('click', () => this.refresh());
     $('route-pick-cancel').addEventListener('click', () => this.stopPick());
     $('rs-fromVehicle').addEventListener('change', (e) => this.setFromVehicle(e.target.checked));

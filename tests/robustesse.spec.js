@@ -303,7 +303,13 @@ test.describe('ergonomie', () => {
     await expect(page.locator('#view-navigate')).toBeVisible();
     expect(await audit(), 'navigation').toEqual([]);
     await page.click('#nav-stop');
-    await page.click('#confirm-ok');
+    expect(await audit(), 'quitter la tournée').toEqual([]);
+    await page.locator('#as-list .as-btn', { hasText: 'Terminer la tournée' }).click();
+    // simulation : capsule de commandes
+    await page.click('#nav-sim');
+    await expect(page.locator('#sim-bar')).toBeVisible();
+    expect(await audit(), 'simulation').toEqual([]);
+    await page.click('#sim-quit');
     await expect(page.locator('#tabbar')).toBeVisible();
 
     await tab(page, 'control').click();

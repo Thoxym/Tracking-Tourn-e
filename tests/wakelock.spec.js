@@ -73,7 +73,7 @@ test('verrou pris, relâché quand la page est masquée, repris au retour', asyn
   await expect.poll(() => wake(page)).toMatchObject({ pending: true });
   expect((await wake(page)).state).toContain('NotAllowedError');
   const box = await page.locator('#map').boundingBox();
-  await page.mouse.click(box.x + 120, box.y + 150);  // dans le plan, au-dessus de la feuille
+  await page.mouse.click(box.x + box.width * 0.6, box.y + 150);  // dans le plan, hors de la feuille (téléphone et grand écran)
   await expect.poll(() => wake(page)).toMatchObject({ state: 'actif', requests: 4 });
 
   await page.click('#btn-wake');
