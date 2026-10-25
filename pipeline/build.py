@@ -21,6 +21,7 @@ import shapely
 
 import config
 import geo
+import roads
 
 
 class BuildError(Exception):
@@ -252,6 +253,22 @@ def build_data(force_extract=False, preview=False):
 
     if preview:
         render_preview(parcels, blds, linked, traces, addrs, x0, y1, W, H, streets)
+
+    # --- réseau routier (itinéraire)
+    if (config.SOURCES_DIR / config.ROADS_BDTOPO).exists() and (config.SOURCES_DIR / config.ROADS_OSM).exists():
+        key_of = lambda a: "_".join(a["row"]["id"].split("_")[:2])  # clé de voie BAN (tourplan.streetKeyOf)
+        street_of_key = {key_of(a): a["s"] for a in addrs}
+        try:
+            roads.build([{"id": a["row"]["id"], "key": key_of(a), "X": a["X"], "Y": a["Y"],
+                          "cad": [c for c in a["row"]["cad_parcelles"].split("|") if c],
+                          "street": names[a["s"]], "label": f"{a['n']}{a['rep']} {names[a['s']]}"} for a in addrs],
+                        parcels_by_id, x0, y1, W, H, street_of_key, names, log, preview=preview)
+        except roads.RoadsError as e:
+            raise BuildError(f"réseau routier : {e}") from e
+    elif (config.DATA_DIR / "roads.json").exists():
+        log("Réseau routier : sources absentes, roads.json existant conservé (python pipeline/fetch_roads.py)")
+    else:
+        log("Réseau routier : sources absentes, pas d'itinéraire (python pipeline/fetch_roads.py)")
     log(f"Données générées en {time.perf_counter() - t0:.0f} s")
 
 

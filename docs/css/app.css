@@ -1128,6 +1128,7 @@ code { font: 13px ui-monospace, "SF Mono", Menlo, Consolas, monospace; backgroun
 .menu-note, .menu-foot { padding: 10px 18px 4px; font-size: 12px; line-height: 1.35; color: var(--text-2); }
 .menu-note { border-top: 6px solid var(--fill); margin-top: 4px; }
 .menu-foot { padding-bottom: 8px; }
+.menu-foot + .menu-foot { padding-top: 0; }
 
 .toast {
   position: absolute;

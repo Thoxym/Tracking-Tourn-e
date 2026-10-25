@@ -88,5 +88,14 @@ LABEL_DIRECTION_WINDOW_M = 40   # demi-fenêtre pour l'orientation locale
 LABEL_END_MARGIN = 0.12          # part de la longueur sans étiquette à chaque extrémité (rues longues)
 LABEL_SNAP_M = 40               # étiquette ramenée sur le tracé de la rue s'il est à moins de 40 m
 
+# Réseau routier (itinéraire) : BD TOPO pour les routes, OSM pour compléter les cheminements à pied et à vélo.
+# Téléchargés par pipeline/fetch_roads.py dans sources/ ; sans eux, le build ne produit pas roads.json.
+ROADS_BDTOPO = "roads-bdtopo-01275.geojson"
+ROADS_OSM = "roads-osm-01275.json"
+ROADS_MARGIN_M = 300            # emprise complète du réseau au-delà du cadre
+ROADS_FAR_MARGIN_M = 1500       # au-delà, jusqu'ici : routes principales seulement (boucles par les communes voisines,
+                                # sans lesquelles des sens uniques coupés isoleraient le bord du Rhône)
+ROADS_FAR_MAX_IMPORTANCE = 4
+
 # Tri naturel des suffixes : "" < bis < ter < quater < quinquies < lettres a-z
 REP_ORDER = {"": 0, "bis": 1, "ter": 2, "quater": 3, "quinquies": 4}

@@ -38,6 +38,7 @@ Commandes (PowerShell ou Git Bash, depuis la racine) :
 pip install --user -r pipeline/requirements.txt     # shapely pyproj scipy numpy pandas pillow
 npm install                                         # devDependencies : @playwright/test
 npx playwright install webkit chromium
+python pipeline/fetch_roads.py                      # télécharge le réseau routier (BD TOPO + OSM) dans sources/
 python pipeline/build.py                            # régénère docs/data/ + stamp
 python pipeline/build.py --stamp                    # recalcule seulement VERSION/PRECACHE de sw.js
 python pipeline/build.py --check                    # vérifie que le stamp est à jour, sans rien écrire
@@ -374,6 +375,87 @@ Style **Liquid Glass** (iOS 26) : matériaux translucides flous (`backdrop-filte
   - Captures iPhone 13 (WebKit) clair et sombre, et grand écran (Chromium).
   - Suite : 121 réussis, 3 ignorés (dont les deux tests de crans, sans objet sur grand écran), avec 5 workers. Avec 8 workers et la machine chargée, quelques démarrages WebKit dépassent le délai (§10).
 
+### 2 quater. Itinéraire, guidage et repères (décidé le 25/10/2026)
+Plan validé par l'utilisateur ; le détail est dans `~/.claude/plans/j-ai-besoin-de-toi-replicated-garden.md`.
+
+Fonctions décidées :
+- **itinéraire optimisé**, calculé sur l'appareil :
+  - tissage (les deux côtés de la rue à la fois) ;
+  - arrêts du véhicule (marche autour de l'arrêt) ;
+  - véhicule voiture, vélo ou à pied ;
+  - réglages par tournée ;
+  - itinéraire entièrement personnalisable (retouches, liste d'arrêts à réordonner) ;
+- **repères d'adresses** (liste fermée + note ≤ 60 caractères), avec une alerte pendant la tournée ;
+- **Distribuer** : choix de la tournée et « Démarrer la tournée », guidage « comme Waze » (voix, carte orientée), simulation (pause, ×2, ×4, ×8).
+
+Chaque écran s'intègre au style Liquid Glass actuel (§2 ter), avec les composants existants.
+
+Choix de l'utilisateur :
+- **réseau** : BD TOPO pour les routes, OSM pour les cheminements, téléchargés par le pipeline ;
+- **départ et arrivée** : choisis sur le plan, approche par Plans ou Waze ;
+- **tissage** : automatique selon la route, puis forcé rue par rue.
+
+Pourquoi pas Dijkstra seul : il donne le plus court chemin entre deux points. L'ordre de visite des arrêts est un problème de voyageur de commerce asymétrique (sens uniques, côté de la route). Dijkstra calcule les temps entre arrêts, puis une heuristique choisit l'ordre (plus proche voisin, Or-opt, 2-opt, orientation des arrêts).
+
+- [x] **I1 — Réseau routier** ✅ (25/10/2026).
+  - **Téléchargement** : `pipeline/fetch_roads.py` (urllib) écrit dans `sources/` (jamais commité). Seule l'emprise est envoyée.
+    - BD TOPO `troncon_de_route` : WFS de la Géoplateforme, par pages, en Lambert-93, cadre + 1,5 km.
+    - OSM `way[highway]` : Overpass, cadre + 300 m.
+  - **`pipeline/roads.py`**, appelé par `build.py` si les deux sources sont là (sinon le `roads.json` existant est conservé).
+    - **Graphe** : extrémités fusionnées à 20 cm près.
+      - Toute la BD TOPO jusqu'à 300 m du cadre, puis seulement les routes carrossables d'importance ≤ 4 jusqu'à 1,5 km.
+      - Sans cette couronne, des sens uniques coupés par l'emprise isolaient le bord du Rhône.
+    - **Attributs d'un tronçon** :
+      - accès par mode : voiture 1, vélo 2, pied 4, voie privée 8. Les voies « restreintes aux ayants droit » restent carrossables, avec une pénalité dans l'app ;
+      - sens (`sens_de_circulation`) ;
+      - vitesse (`vitesse_moyenne_vl`, plafonnée à 70 km/h) ;
+      - rue de la commune, par l'identifiant BAN de voie gauche/droite, qui est la clé `01275_0660` des ids d'adresse ;
+      - nom pour les consignes ;
+      - « pas de tissage d'office » : 2 chaussées, rond-point, bretelle, importance ≤ 2, chaussée ≥ 9 m, ou ≥ 3 voies ;
+      - classe.
+    - **OSM** ajoute seulement :
+      - les cheminements à plus de 6 m de tout tronçon BD TOPO (sentiers, escaliers, passages), raccordés au tronçon le plus proche à moins de 8 m ;
+      - les dessertes (`service`), souvent des impasses privées absentes de la BD TOPO, carrossables comme voies privées.
+    - **Rattachement de chaque adresse** au tronçon de sa voie, à moins de 120 m. Le tronçon est cherché dans cet ordre :
+      1. par l'identifiant BAN ;
+      2. par le nom (abréviations BD TOPO « CHE », « IMP » développées, articles et « privée » ignorés) ;
+      3. par un tronçon carrossable sans nom à moins de 40 m (impasse privée : il prend l'identifiant de la voie) ;
+      4. sinon, par le tronçon carrossable le plus proche.
+    - **Point de remise** : point de la limite de parcelle le plus proche de la projection de l'adresse sur la voie (la façade, pas le fond de la parcelle).
+    - **Côté** : droite ou gauche dans le sens de saisie du tronçon. Sur une voie bordée par deux rues, le côté de la bonne rue l'emporte.
+    - **Accès voiture** : une adresse sur un chemin non carrossable, ou hors de la composante principale en voiture, reçoit l'accès voiture le plus proche (≤ 400 m).
+  - **Assertions** :
+    - 941 adresses rattachées ;
+    - au moins 88 % sur un tronçon de leur voie (le reste : impasses privées absentes des deux sources, desservies depuis la route d'accès) ;
+    - `roads.json` ≤ 1,5 Mo.
+  - **Chiffres réels** :
+
+    | Mesure | Valeur |
+    |---|---|
+    | réseau | 2058 nœuds, 2400 tronçons, 184 km |
+    | carrossables dans la composante principale | 1539 / 1687 |
+    | rattachement | 723 par l'identifiant, 40 par le nom, 79 à une voie sans nom, 99 à une autre voie |
+    | distance route - point de remise | médiane 4,3 m, max 94 m |
+    | `roads.json` | 230 Ko |
+  - `--preview` écrit aussi `work/roads-preview.png`.
+  - **Mentions dans le menu ⋯** : BAN et cadastre (Etalab), IGN BD TOPO, © contributeurs OpenStreetMap (ODbL). `roads.json`, base dérivée d'OSM, est sous ODbL (dépôt public : conforme).
+  - **Tests** : `tests/itineraire.spec.js` : cohérence du graphe, chaque adresse rattachée, accès voiture, pairs et impairs de part et d'autre de la Rue de la Gare, mentions du menu.
+  - **Constat pour I2** : une partie de la Route de Genève est en **2 chaussées à sens unique**, et chaque côté se rattache à sa chaussée. Un arrêt tissé doit donc regrouper les points de remise par **distance de marche autour de l'arrêt**, pas par tronçon.
+- [ ] **I2 — Moteur** :
+  - `js/routing.js` : Dijkstra sur arcs orientés, demi-tours pénalisés ;
+  - `js/itinerary.js` : arrêts, tissage, ordre de visite, ordre dans l'arrêt ;
+  - `js/route-worker.js`.
+- [ ] **I3 — Préparer, page Itinéraire** :
+  - réglages : véhicule, tissage, départ / arrivée ;
+  - calcul et aperçu ;
+  - liste d'arrêts à retoucher (Monter / Descendre, fusionner, séparer) ;
+  - `tour.route`, `ui.visitOrder()`.
+- [ ] **I4 — Repères** : `store.TAGS`, `meta.tags`, fiche d'adresse, page Repères, icônes sur le plan, alertes.
+- [ ] **I5 — Navigation** : choix de la tournée et « Démarrer » dans Distribuer, arrêt courant, bandeau de consigne, tracé, recalcul hors itinéraire.
+- [ ] **I5 bis — Simulation** : même vue, position simulée le long du tracé, pause, ×1 à ×8, arrêt précédent / suivant, sans écrire dans le journal.
+- [ ] **I6 — Voix et carte orientée** : `speechSynthesis`, rotation de la carte, repli « nord en haut ».
+- [ ] **I7 — Robustesse** : tests de guidage et de repères, performance sur la commune entière, hors ligne, RGPD (§13), documentation.
+
 ---
 
 ## 3. Définition de « terminé » pour la v0.1
@@ -398,6 +480,10 @@ Sous Licence Ouverte Etalab 2.0. Le pipeline accepte la version département **o
 | Adresses BAN, CSV `;` | `adresses-01.csv.gz` (9 Mo) | `adresses-01275.csv(.gz)` ou CSV déjà filtré |
 | Bâtiments, GeoJSON | `cadastre-01-batiments.json.gz` (34 Mo) | `cadastre-01275-batiments.json.gz` |
 | Parcelles, GeoJSON | `cadastre-01-parcelles.json.gz` (181 Mo, 815 Mo décompressé) | `cadastre-01275-parcelles.json.gz` |
+
+Réseau routier (branche facteur, itinéraire), téléchargé par `pipeline/fetch_roads.py` dans `sources/` :
+- `roads-bdtopo-01275.geojson` : BD TOPO `troncon_de_route`, IGN, Licence Ouverte ; environ 11 Mo, 3650 tronçons ;
+- `roads-osm-01275.json` : OSM `way[highway]`, ODbL ; environ 0,7 Mo.
 
 Les noms peuvent varier (`_csv.gz`, `_json.gz`) : détecter par motif. **Ne jamais lire ces fichiers en entier.** Si un fichier d'un autre type est fourni (PDF, shapefile…), demander à l'utilisateur quoi en faire.
 
@@ -470,6 +556,8 @@ neyron-tournees/
 │   ├── config.py         # STREETS, COLORS, EXPECTED_COUNTS, filtres, marges, seuils
 │   ├── geo.py            # extraction, projection, emprise, association, tracés
 │   ├── build.py          # point d'entrée : docs/data/*, version, stamp de sw.js (--stamp)
+│   ├── fetch_roads.py    # branche facteur : télécharge le réseau routier (BD TOPO, OSM) dans sources/
+│   ├── roads.py          # branche facteur : graphe routier et rattachement des adresses -> data/roads.json
 │   └── icons.py          # icônes PNG avec Pillow
 ├── docs/                 # LE SITE servi par GitHub Pages (pas de la documentation)
 │   ├── .nojekyll
@@ -480,7 +568,7 @@ neyron-tournees/
 │   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js,
 │   │                     #   tabs.js, sheet.js, tourplan.js, report.js, views/ (prepare.js, distribute.js, control.js, common.js) — branche facteur
 │   ├── icons/
-│   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, version.json (ne pas lire)
+│   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, roads.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
                           #   branche facteur : navigation, tournees, preparer, distribuer, controler, robustesse),
                           #   helpers.js (outils communs), serve.py (serveur statique des tests)
@@ -564,6 +652,18 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
       "ld": "Sur l'Île", "cad": "01275000AI0458", "bat": "b42", "ctx": false }
   ]
 }
+// roads.json (branche facteur) : coordonnées SVG du cadre, comme addresses.json
+{ "version": "…", "attribution": "…", "fetched": {"bdtopo": "…", "osm": "…"},
+  "classes": ["route", "rond-point", …], "names": ["Route de Genève", …],
+  "nodes": [x0, y0, x1, y1, …],
+  // tronçon : nœuds a et b ; longueur (m) ; accès (1 voiture, 2 vélo, 4 pied, 8 voie privée) ;
+  // sens (1 : a -> b, -1 : b -> a, 0 : double) ; km/h voiture ; rue de la commune (-1 sinon) ; nom (-1 sinon) ;
+  // pas de tissage d'office ; classe ; points intermédiaires
+  "edges": [[a, b, len, m, ow, v, s, name, nw, cls, [x, y, …]], …],
+  // adresse : tronçon ; abscisse depuis a (m) ; côté (+1 droite, -1 gauche dans le sens a -> b) ;
+  // distance route - point de remise (m) ; point de remise ; puis, si le tronçon n'est pas carrossable :
+  // tronçon, abscisse et distance de l'accès voiture
+  "snap": { "01275_0420_00028": [ei, t, sd, off, px, py], … } }
 // plan.json
 { "parcels": "M…", "buildingsOther": "M…",
   "buildings": { "b42": "M…" },          // bâtiments liés à une adresse
@@ -957,3 +1057,22 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - grand cran : les boutons de la carte s'effacent, comme dans Plans ;
   - pas de SF Symbols (licence réservée aux plateformes Apple) : icônes SVG dessinées dans le même esprit ;
   - couleurs système d'Apple assombries pour les statuts sur fond plein (vert `#248a3d`, rouge `#d70015`), « À repasser » et « Remettre à faire » en boutons teintés.
+- **25/10/2026** — Refonte commitée par l'utilisateur (`396c244`). Nouvelles fonctions décidées (§2 quater) :
+  - itinéraire optimisé calculé sur l'appareil, avec tissage et arrêts du véhicule ;
+  - modes voiture, vélo et à pied ;
+  - itinéraire personnalisable ;
+  - repères d'adresses avec alerte ;
+  - guidage « comme Waze » (voix, carte orientée) ;
+  - simulation.
+
+  Choix de l'utilisateur :
+  - réseau BD TOPO et OSM, téléchargés par le pipeline ;
+  - repères en liste fermée avec une note courte (avertissement RGPD) ;
+  - départ et arrivée choisis sur le plan, approche par Plans ou Waze ;
+  - retouches du calcul et liste d'arrêts à réordonner ;
+  - tissage automatique selon la route.
+- **25/10/2026** — I1 :
+  - tronçons rattachés aux voies par l'identifiant BAN de la BD TOPO (même clé que les adresses) plutôt que par le nom ;
+  - point de remise estimé sur la limite de parcelle au droit de l'adresse, car la BAN place souvent le point sur la maison ;
+  - emprise élargie à 1,5 km pour les routes principales, car des sens uniques coupés isolaient le bord du Rhône ;
+  - dessertes OSM carrossables comme voies privées.
