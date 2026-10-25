@@ -6,7 +6,7 @@ import { REASONS, ST_AGAIN, ST_ANOMALY, ST_DONE, isTreated, reasonLabel } from '
 import { reportCsv, reportJson } from '../report.js';
 import { formatDistance, formatDuration, workload, workloadSettings } from '../tourplan.js';
 import { STATUS_LABELS, addressLabel } from '../ui.js';
-import { plural, showAddress, showStreet, streetRow } from './common.js';
+import { guard, plural, showAddress, showStreet, streetRow } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 const HOURS_KEY = 'neyron-tournees.report-hours';  // préférence d'appareil : heures dans le rapport
@@ -16,6 +16,7 @@ const agree = (n, word) => `${word}${n > 1 ? 's' : ''}`;
 export class ControlView {
   constructor(app) {
     this.app = app;
+    guard(this, ['closePassage', 'reopen']);
     app.tabs.onChange((tab) => { if (tab === 'control') this.render(); });
     app.store.onChange(() => { if (app.tabs.current === 'control') this.render(); });
     // exports synchrones jusqu'à la feuille de partage : appelés directement dans le geste

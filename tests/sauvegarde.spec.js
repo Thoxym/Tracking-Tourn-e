@@ -41,7 +41,7 @@ test('export puis import sur un autre appareil : état identique', async ({ page
   await expect(page.locator('#menu')).toBeHidden();
   await expect(page.locator('#toast-msg')).toHaveText(/^Sauvegarde téléchargée/);
   const backup = JSON.parse(fs.readFileSync(file, 'utf-8'));
-  expect(backup).toMatchObject({ app: 'neyron-tournees', schema: 1 });
+  expect(backup).toMatchObject({ app: 'neyron-tournees', schema: 2 });
   expect(backup.events).toHaveLength(5);
   expect(backup.tours).toHaveLength(1);
   expect(await page.evaluate(() => Boolean(window.neyronApp.store.meta.lastExportAt))).toBe(true);

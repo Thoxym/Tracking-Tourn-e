@@ -14,6 +14,10 @@
 
 const DB_NAME = 'neyron-tournees';
 const DB_VERSION = 1;
+// format des sauvegardes : 1 = v0.1 (tournée « default » sans composition) ; 2 = branche facteur (composition,
+// ordre de passage, passages clôturés, anomalies et motifs). Une v0.1 refuse donc en bloc un fichier v2 plutôt
+// que d'en ignorer une partie (sans les bornes de passage, elle recalculerait un état faux).
+export const BACKUP_SCHEMA = 2;
 export const DEFAULT_TOUR = 'default';  // même id sur tous les appareils : les exports fusionnent sur la même tournée
 export const ST_TODO = 'a_faire';
 export const ST_DONE = 'fait';
@@ -47,6 +51,14 @@ function applyEvent(state, reasons, e) {
     if (e.st === ST_ANOMALY) reasons.set(id, e.why);
     else reasons.delete(id);
   }
+}
+
+// plus grand seq de cet appareil (boucle, pas de Math.max(...) : le journal peut compter des centaines de
+// milliers d'événements, au-delà de la limite d'arguments d'un appel)
+function maxSeq(events, dev) {
+  let m = 0;
+  for (const e of events) if (e.dev === dev && e.seq > m) m = e.seq;
+  return m;
 }
 
 function randomId(bytes = 6) {
@@ -104,6 +116,7 @@ export class Store {
     this.reasons = new Map(); // id -> motif, pour les anomalies
     this.listeners = new Set();
     this.persistent = null;
+    this.presets = [];
   }
 
   // presets : tournées prédéfinies des données ({id, name, ids}) ; « default » complète la tournée de la v0.1
@@ -114,6 +127,7 @@ export class Store {
   }
 
   async _init(dataVersion, presets) {
+    this.presets = presets;
     try {
       this.db = await openDB();
       const r = await transact(this.db, ['meta', 'tours', 'events'], 'readonly', (tx, out) => {
@@ -130,7 +144,7 @@ export class Store {
     }
     const m = this.meta;
     this.deviceId = m.deviceId || randomId();
-    const ownMax = Math.max(0, ...this.allEvents.filter((e) => e.dev === this.deviceId).map((e) => e.seq));
+    const ownMax = maxSeq(this.allEvents, this.deviceId);
     this.seq = Math.max(m.seq || 0, ownMax);
     // migration v0.1 : la tournée « default » n'avait pas de composition, elle reçoit celle du preset
     // de même id (les 10 rues) ; sa progression, rattachée à l'id, est conservée
@@ -218,9 +232,9 @@ export class Store {
       else entry.todo += 1;  // non traitée : à faire ou à repasser
       if (st === ST_AGAIN) entry.again += 1;
     }
-    t.closures = [...(t.closures || []), entry];
-    t.updatedAt = Date.now();
-    await this._save({}, [t]);
+    const next = { ...t, closures: [...(t.closures || []), entry], updatedAt: Date.now() };
+    await this._save({}, [next]);
+    Object.assign(t, next);
     this._reload();
     this._emit({ type: 'tour', tour: t, change: ['closures'] });
     return entry;
@@ -234,9 +248,9 @@ export class Store {
   async reopenPassage() {
     if (!this.canReopen()) return false;
     const t = this.activeTour;
-    t.closures = t.closures.slice(0, -1);
-    t.updatedAt = Date.now();
-    await this._save({}, [t]);
+    const next = { ...t, closures: t.closures.slice(0, -1), updatedAt: Date.now() };
+    await this._save({}, [next]);
+    Object.assign(t, next);
     this._reload();
     this._emit({ type: 'tour', tour: t, change: ['closures'] });
     return true;
@@ -245,8 +259,8 @@ export class Store {
   // extra : ordre de passage d'un secteur importé ({order, reverse})
   async createTour(name, ids = [], extra = {}) {
     const t = Object.assign(newTour(`t-${randomId(5)}`, name, ids), extra);
+    await this._save({}, [t]);  // écrire d'abord : en cas d'échec, l'écran ne montre pas une tournée perdue
     this.tours.push(t);
-    await this._save({}, [t]);
     await this.setActiveTour(t.id);
     return t;
   }
@@ -254,8 +268,9 @@ export class Store {
   async updateTour(id, patch) {
     const t = this.tours.find((x) => x.id === id);
     if (!t) return null;
-    Object.assign(t, patch, { updatedAt: Date.now() });
-    await this._save({}, [t]);
+    const next = { ...t, ...patch, updatedAt: Date.now() };
+    await this._save({}, [next]);
+    Object.assign(t, next);
     this._emit({ type: 'tour', tour: t, change: Object.keys(patch) });
     return t;
   }
@@ -379,7 +394,7 @@ export class Store {
   exportData() {
     return {
       app: 'neyron-tournees',
-      schema: 1,
+      schema: BACKUP_SCHEMA,
       exportedAt: new Date().toISOString(),
       deviceId: this.deviceId,
       dataVersion: this.meta.dataVersion || null,
@@ -410,12 +425,18 @@ export class Store {
   // [dev, seq]) ; une tournée connue est remplacée si la version importée est plus récente (updatedAt)
   async merge(events, tours = []) {
     const added = this.newEvents(events);
+    // sauvegarde v0.1 : une tournée sans composition reçoit celle du preset de même id (même migration qu'au
+    // démarrage) ; elle ne remplace jamais une tournée connue (updatedAt absent = 0)
+    tours = tours.map(({ legacy, ...t }) => {
+      const pr = legacy && this.presets.find((p) => p.id === t.id);
+      return pr ? { ...t, ids: [...pr.ids], name: t.name === 'Tournée' ? pr.name : t.name } : t;
+    });
     const newTours = tours.filter((t) => !this.tours.some((x) => x.id === t.id));
     const updated = tours.filter((t) => {
       const local = this.tours.find((x) => x.id === t.id);
       return local && (t.updatedAt || 0) > (local.updatedAt || 0);
     });
-    const ownMax = Math.max(0, ...added.filter((e) => e.dev === this.deviceId).map((e) => e.seq));
+    const ownMax = maxSeq(added, this.deviceId);
     if (this.db && (added.length || newTours.length || updated.length)) {
       await transact(this.db, ['events', 'tours', 'meta'], 'readwrite', (tx) => {
         for (const e of added) tx.objectStore('events').add(e);
@@ -426,7 +447,7 @@ export class Store {
       });
     }
     if (ownMax > this.seq) this.seq = this.meta.seq = ownMax;
-    this.allEvents.push(...added);
+    for (const e of added) this.allEvents.push(e);
     this.tours.push(...newTours);
     for (const t of updated) Object.assign(this.tours.find((x) => x.id === t.id), t);
     this._reload();

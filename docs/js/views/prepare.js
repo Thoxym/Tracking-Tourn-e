@@ -8,7 +8,7 @@ import {
   nearUnaddressed, parseSector, saveWorkloadSettings, validSetting, workload, workloadSettings,
 } from '../tourplan.js';
 import { addressLabel } from '../ui.js';
-import { fold, num, plural, showAddress, showPoint, showStreet, streetRow } from './common.js';
+import { fold, guard, num, plural, showAddress, showPoint, showStreet, streetRow } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -82,6 +82,8 @@ export class PrepareView {
     this.selecting = false;  // composition sur la carte
     this.allByStreet = app.ui.streets.map((_, i) => app.map.pointable.filter((a) => a.s === i));
     this.rank = new Map(app.map.pointable.map((a, k) => [a.id, k]));  // ordre des données : rue, numéro
+    guard(this, ['activate', 'newTour', 'renameTour', 'archiveTour', 'restore', 'moveStreet', 'toggleReverse',
+      'resetOrder', 'addGaps', 'toggle', '_applyEditor']);
 
     $('prep-search').addEventListener('input', (e) => { this.query = fold(e.target.value.trim()); this.renderStreets(); });
     $('btn-tour-new').addEventListener('click', () => this.newTour());

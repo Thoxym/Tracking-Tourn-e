@@ -1,7 +1,7 @@
 // Sauvegarde : export JSON de la progression (feuille de partage iOS, sinon téléchargement) et import
 // par fusion. Un fichier importé est une donnée non fiable : validé champ par champ, champs inconnus retirés.
 
-import { REASON_CODES, STATUSES, ST_ANOMALY } from './store.js';
+import { BACKUP_SCHEMA, REASON_CODES, STATUSES, ST_ANOMALY } from './store.js';
 import { reportFileName } from './report.js';
 
 const $ = (id) => document.getElementById(id);
@@ -67,7 +67,10 @@ export function parseBackup(text) {
   }
   if (!obj || obj.app !== 'neyron-tournees') throw new Error('ce fichier n\'est pas une sauvegarde des tournées de Neyron');
   if (obj.kind === 'rapport') throw new Error('ce fichier est un rapport de tournée, pas une sauvegarde');
-  if (obj.schema !== 1) throw new Error(`version de sauvegarde non prise en charge (${String(obj.schema).slice(0, 10)})`);
+  if (Number.isSafeInteger(obj.schema) && obj.schema > BACKUP_SCHEMA) {
+    throw new Error(`sauvegarde faite par une version plus récente de l'app (format ${obj.schema}) : mettez l'app à jour`);
+  }
+  if (obj.schema !== 1 && obj.schema !== 2) throw new Error(`version de sauvegarde non prise en charge (${String(obj.schema).slice(0, 10)})`);
   if (!Array.isArray(obj.events) || obj.events.length > MAX_EVENTS) throw new Error('liste d\'événements absente ou trop longue');
   const events = [];
   let invalid = 0;
@@ -76,8 +79,16 @@ export function parseBackup(text) {
     if (v) events.push(v);
     else invalid += 1;
   }
-  const tours = Array.isArray(obj.tours) ? obj.tours.slice(0, 1000).map(validTour).filter(Boolean) : [];
+  // v0.1 (format 1) : une tournée sans liste d'adresses est marquée, le store lui donnera le preset de même id
+  const tours = Array.isArray(obj.tours)
+    ? obj.tours.slice(0, 1000).map((t) => {
+      const v = validTour(t);
+      if (v && obj.schema === 1 && !Array.isArray(t.ids)) v.legacy = true;
+      return v;
+    }).filter(Boolean)
+    : [];
   return {
+    schema: obj.schema,
     events,
     tours,
     invalid,

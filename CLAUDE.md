@@ -310,7 +310,31 @@ npx playwright test                                 # tests (serveur lancé par 
     - si l'horloge du téléphone recule, un nouvel événement est daté juste après la borne (sinon il serait invisible) ;
     - import : `validTour` valide les passages (comptes ≥ 0, début < fin, motifs de la liste) et les trie.
   - Tests : `tests/controler.spec.js` (4 × 2 : synthèse et listes ; rapports CSV / JSON, heures, partage, injection, refus à l'import ; clôture, historique, rapport du passage clos, réouverture, relance ; horloge qui recule et passages importés). Sabotages détectés (borne ignorée, garde anti-formule retirée). Suite : 106 réussis, 1 ignoré, 1 réussi au second essai (le test cliquait le toast après ses 8 s : corrigé) ; contrôler × 5 : 40/40 ; contrôler, sauvegarde, distribuer et navigation × 3 : 108/108.
-- [ ] **L7 — Robustesse**. Export/import v2, migration depuis la v0.1, tests des 3 vues, revue RGPD (motifs, rapport agrégé).
+- [x] **L7 — Robustesse** ✅ (20/10/2026).
+  - **Sauvegarde au format 2** (`store.BACKUP_SCHEMA`) :
+    - contenu : composition, ordre, sens, passages clôturés, anomalies et motifs ;
+    - import des formats 1 (v0.1) et 2. Une tournée v0.1 sans composition (`legacy`) reçoit le preset de même id, comme la migration au démarrage, et ne remplace jamais une tournée connue ;
+    - format plus récent : refusé avec la consigne « mettez l'app à jour » ;
+    - une v0.1 refuse en bloc un fichier v2, plutôt que d'en recalculer un état faux sans les bornes de passage.
+  - **Écritures** :
+    - le store écrit **avant** de modifier la mémoire (`createTour`, `updateTour`, clôture, réouverture) : si l'écriture échoue, l'écran ne montre pas un changement perdu à la relance ;
+    - les actions de Préparer et Contrôler passent par `common.guard` : toast « Enregistrement impossible : … » au lieu d'une promesse rejetée silencieuse (le pointage l'avait déjà).
+  - **Journal d'un an** (mesuré : 300 passages de 229 adresses, 68 700 événements, Chromium) :
+    - état recalculé en 3 ms, rendus de Préparer et Contrôler en 7 et 20 ms, relance en 0,5 s : pas d'optimisation nécessaire ;
+    - les `Math.max(...)` et `push(...)` sur tout le journal sont remplacés par des boucles (limite d'arguments d'un appel, qui dépend de la pile du moteur) ;
+    - WebKit sous Windows écrit 15 ms par événement dans IndexedDB : importer une grosse sauvegarde y est lent (moteur de test, pas l'app).
+  - **Ergonomie à une main** (audit, puis test) :
+    - toutes les cibles font au moins 44 px : noms de rues de la légende (34), « Distribué » de l'encart GPS (36), action du toast (36), champs de recherche et de réglage (40), en-têtes repliables (32), Tous / Pairs / Impairs (40), « Rouvrir » (40) ;
+    - **bug corrigé** : dans une vue qui défile, les boutons s'écrasaient sous leur hauteur (« Sauvegarder la progression » à 24 px). Correctif : `.view-body > * { flex-shrink: 0 }`.
+  - **RGPD** : revue en §13 ; mention sous « Sauvegarder la progression » (historique horodaté : à garder pour soi, ce n'est pas un rapport).
+  - Tests : `tests/robustesse.spec.js` (5 × 2) :
+    - parcours complet **hors ligne** : secteur importé, ordre, reprise avec anomalie et toute la rue, rapport, clôture, relance ;
+    - format 2 d'un appareil à l'autre, état identique ;
+    - fichiers v0.1 (annulation rejouée, preset) et format futur ;
+    - stockage plein ;
+    - cibles ≥ 44 px et boutons nommés dans les 3 vues, le panneau, le choix du motif, la reprise, le menu et l'éditeur de rue.
+
+    Sabotages détectés (migration v0.1 retirée, écrasement des boutons remis). Suite : 117 réussis, 1 ignoré. Robustesse, sauvegarde, tournées et contrôler × 3 : 114/114.
 - [ ] **L8 — Déploiement de la branche** (canal à décider, accord explicite).
 
 **À valider par l'utilisateur** :
@@ -426,7 +450,7 @@ neyron-tournees/
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
-                          #   branche facteur : navigation, tournees, preparer, distribuer, controler),
+                          #   branche facteur : navigation, tournees, preparer, distribuer, controler, robustesse),
                           #   helpers.js (outils communs), serve.py (serveur statique des tests)
 ```
 
@@ -559,7 +583,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **L'état courant est dérivé du journal** : pour chaque `id`, le dernier événement de la tournée active l'emporte, ordre `(t, dev, seq)` (départage déterministe entre appareils).
 - **Groupes et annulation** : chaque action utilisateur a un `grp` unique. Une action groupée dont les états précédents diffèrent (ex. « Toute la rue faite » alors que certains étaient « à repasser ») est annulée par **plusieurs événements** (un par état précédent), tous avec `undoOf: <grp annulé>`. La pile d'annulation est dérivée du journal (dernières actions de l'appareil non annulées) : elle survit à une relance. **On n'efface jamais rien du journal.**
 - `navigator.storage.persist()` au premier lancement ; résultat affiché dans le debug.
-- **Export** : `{app: "neyron-tournees", schema: 1, exportedAt, deviceId, tours, events}`.
+- **Export** : `{app: "neyron-tournees", schema: 1, exportedAt, deviceId, tours, events}` (branche facteur : `schema: 2`, formats 1 et 2 importés, §2 bis L7).
 - **Import** : fusion avec dédoublonnage sur `(dev, seq)`, puis recalcul de l'état. Ce format permettra de fusionner plusieurs téléphones.
 - **Export** (`io.js`) : fichier `neyron-tournees-export-AAAAMMJJ-HHMM.json` (motif ignoré par git), avec en plus `dataVersion`. Construit de façon **synchrone** jusqu'à `navigator.share` (la feuille de partage exige un geste récent : pas d'`await` avant). `meta.lastExportAt` est mémorisé (pour le futur rappel de sauvegarde).
 - **Import = donnée non fiable** : `parseBackup()` vérifie `app`, `schema`, puis chaque événement champ par champ (types, `st` ∈ statuts, `seq` entier ≥ 1, longueurs ≤ 64-140 caractères, ≤ 2000 ids, ≤ 200 000 événements, fichier ≤ 20 Mo) ; les entrées invalides sont ignorées et comptées, les **champs inconnus retirés** ; affichage uniquement par `textContent`. Confirmation avant fusion (nombre d'événements, date, appareil source, entrées ignorées, adresses inconnues du plan). Rien n'est jamais supprimé.
@@ -789,6 +813,20 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
 - Stocker plus que fait / pas fait (absent, refus, notes) = données sur des foyers identifiables, soumises au RGPD.
 - Une liste d'« absents » horodatés équivaut à une liste de maisons vides. Ces données restent **sur l'appareil**, ne sont jamais commitées et ne partent jamais vers un serveur sans décision explicite de l'utilisateur.
 
+### Revue de la branche facteur (L7, 20/10/2026)
+| Donnée | Où | Contenu | Mesure |
+|---|---|---|---|
+| Journal (`events`) | IndexedDB, sur l'appareil | chaque pointage horodaté, motif d'anomalie codé | jamais envoyé ; conservé sans limite (voir ci-dessous) |
+| Motifs d'anomalie | journal, rapport | 6 codes fermés ; « destinataire inconnu » concerne les occupants | aucune note libre ; motifs validés par l'utilisateur |
+| Rapport CSV / JSON | partagé à la main | une ligne par adresse : statut, motif | **sans heure par défaut** ; heures sur demande explicite (case) |
+| Historique des passages | fiche de tournée | comptes par passage, anomalies par motif | **agrégé**, sans détail par adresse ni heure |
+| Sauvegarde JSON | partagée à la main | tout le journal horodaté, identifiant d'appareil aléatoire | mention « à garder pour vous, ce n'est pas un rapport » |
+| Position GPS | mémoire seulement | — | jamais stockée ni exportée ; masquée dans le diagnostic copié |
+| Préférences (`localStorage`) | appareil | thème, onglet, réglages de charge, reprise, heures du rapport | aucune donnée personnelle |
+
+- Aucun flux réseau nouveau : CSP inchangée, aucun service tiers, tout reste sur l'appareil.
+- **Point ouvert (à valider)** : le journal n'est jamais purgé, une règle de conception pour l'annulation et la fusion. Pour un usage réel, la limitation de conservation demanderait une purge des événements antérieurs aux passages clôturés depuis N jours. Le bilan agrégé des passages serait gardé ; le passage en cours et l'annulation n'en dépendent pas. Non fait sans accord.
+
 ---
 
 ## 14. Journal des décisions
@@ -856,3 +894,8 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - Clôturer = fin du **passage**, pas de la tournée : un facteur refait la même tournée chaque jour. Borne dans le journal plutôt qu'effacement ou duplication de tournée ; dernier passage réouvrable.
   - Historique **agrégé** seulement. Le détail par adresse sort par le rapport, à exporter avant ou juste après la clôture (toast).
   - Rapport sans heures par défaut (RGPD), heures en option. CSV protégé contre l'injection de formule.
+- **20/10/2026** — Commit `5ffa2f6` (L6). L7 : robustesse.
+  - Sauvegarde au format 2. La v0.1 la refuse en bloc, et c'est voulu : sans les bornes de passage, elle calculerait un état faux.
+  - Store : écrire d'abord, modifier la mémoire ensuite.
+  - Cibles tactiles portées à 44 px partout, et correction de l'écrasement des boutons dans les vues qui défilent.
+  - Revue RGPD consignée en §13. La purge du journal est proposée à l'utilisateur, pas faite, car elle touche la règle « on n'efface jamais rien ».

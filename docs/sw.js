@@ -3,7 +3,7 @@
 // `python pipeline/build.py --stamp` : après toute modification de docs/, relancer le stamp.
 
 // @build:start (généré par pipeline/build.py --stamp, ne pas éditer)
-const VERSION = '60ad7840';
+const VERSION = 'd4a1beb1';
 const PRECACHE = [
   './',
   './css/app.css',

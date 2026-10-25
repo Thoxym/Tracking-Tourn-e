@@ -89,6 +89,22 @@ export function showAddress(app, a) {
   app.ui.openSheet(a);
 }
 
+// Méthodes d'une vue qui écrivent dans le stockage : une erreur (quota dépassé, base indisponible) est
+// signalée par un toast au lieu de se perdre dans une promesse rejetée
+export function guard(view, names) {
+  for (const name of names) {
+    const fn = view[name].bind(view);
+    view[name] = async (...args) => {
+      try {
+        return await fn(...args);
+      } catch (err) {
+        view.app.ui.toast(`Enregistrement impossible : ${err.message}`, { ms: 6000 });
+        return null;
+      }
+    };
+  }
+}
+
 // numéro et suffixe : « 22 bis »
 export const num = (a) => `${a.n}${a.rep ? ` ${a.rep}` : ''}`;
 
