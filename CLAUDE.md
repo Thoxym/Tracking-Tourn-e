@@ -342,6 +342,38 @@ npx playwright test                                 # tests (serveur lancé par 
 - nom de l'app (sans marque La Poste) ;
 - canal de déploiement de la branche.
 
+### 2 ter. Refonte de l'interface (décidée le 25/10/2026, avant toute publication)
+Style **Liquid Glass** (iOS 26) : matériaux translucides flous (`backdrop-filter`), coins très arrondis, composants iOS (listes groupées, interrupteurs, contrôle segmenté, alertes, feuille d'actions, menu déroulant). **Au plus simple, sans perdre de fonction.**
+- **Carte plein écran**, toujours visible. Boutons en verre posés dessus : Annuler en haut à gauche ; colonne en haut à droite avec menu ⋯, localiser et écran allumé ; « voir tout » dessous ; zoom +/− seulement à la souris.
+- **Feuille à crans** (petit / moyen / grand) par-dessus la carte, comme Localiser ou Plans. Les 3 onglets (**capsule flottante** en bas) changent son contenu, et chaque onglet garde son cran. Navigation par pages dans la feuille (retour « ‹ »), au lieu des sections repliables. Sur grand écran : panneau latéral fixe.
+- **Distribuer** : la **prochaine adresse** est toujours proposée en haut de la feuille, sans mode « Reprendre » à activer : Distribué, Anomalie, À repasser, Toute la rue. Puis les adresses à proximité (GPS) et les rues de la tournée (l'ancienne légende).
+- **Fiche d'adresse** (toucher sur la carte, ou une ligne d'une liste) : page de la feuille, dans n'importe quel onglet.
+- **Préparer** : la tournée active (charge estimée), puis des lignes qui ouvrent des pages : Tournées, Ordre de passage, Vérifications, Rues de la commune (éditeur de rue), Réglages de l'estimation. « Choisir sur la carte » réduit la feuille à une barre.
+- **Contrôler** : anneau de progression et 4 cases, puis Par rue, Anomalies, Non traitées, Passages clôturés ; rapport (interrupteur « heures ») ; clôture. La sauvegarde n'est plus que dans le menu ⋯.
+- Couleurs système d'Apple (bleu, vert, orange, rouge, assombris pour garder un contraste lisible sous un texte blanc). Police système (SF sur iPhone). Respect de « Réduire la transparence » et « Réduire les animations ».
+
+Étapes :
+- [x] **R1 — Coquille** ✅ (25/10/2026).
+  - `#map` plein écran ; boutons ronds en verre : Annuler (haut gauche), capsule ⋯ / localiser / écran allumé (haut droite), « voir toute la tournée », zoom +/− seulement avec une souris (`hover: hover`). Échelle affichée pendant et juste après un changement de vue.
+  - `js/sheet.js` (`Panel`) : feuille à 3 crans (`peek` = jusqu'à l'élément `[data-peek]` de la page, `medium` = 52 % de l'écran, `large` = sous la barre d'état).
+    - La **hauteur** suit le doigt, pas une translation : le contenu qui défile a toujours la taille de la partie visible. Un élément focalisé ou ciblé se montre donc en faisant défiler la page, sans cran caché.
+    - On tire par la poignée, l'en-tête, ou le contenu hors grand cran (`touch-action: none`). Au grand cran, le contenu défile ; tiré vers le bas tout en haut, il réduit la feuille (événements tactiles). Un geste vif passe au cran suivant ; le toucher qui suit un glisser est ignoré. La poignée fait aussi passer au cran suivant au clic.
+    - Pile de pages par vue : `[data-push]` / `[data-back]` ; toucher l'onglet courant ramène à la page principale (et ferme la fiche d'adresse).
+    - Chaque vue garde son cran (Distribuer : petit ; Préparer et Contrôler : moyen au premier affichage). Au grand cran, les boutons de la carte s'effacent (`visibility`).
+    - Marges de la carte : `ui.updatePadding()` d'après `panel.covered()` (hauteur visée, plafonnée au cran moyen) ou `coveredLeft()` (grand écran).
+  - `tabs.js` : capsule flottante, la vue de l'onglet s'affiche dans la feuille. Grand écran (≥ 900 px) : panneau latéral fixe de 400 px, capsule en bas du panneau.
+- [x] **R2 — Contenus** ✅ (25/10/2026).
+  - **Distribuer** : en-tête (nom de la tournée, « n/N adresses traitées »), prochaine adresse **toujours** proposée (plus de mode « Reprendre » ni de clé `guided`), puis « À proximité » (GPS) et « Rues de la tournée » (ancienne légende, avec recherche). Une action faite depuis la carte « prochaine » montre l'adresse suivante sur le plan ; au lancement d'une tournée commencée, le plan s'ouvre sur elle.
+  - **Fiche d'adresse** (`#sheet`) : vue de la feuille au petit cran, par-dessus l'onglet courant, retrouvé à la fermeture. Les listes de Préparer et Contrôler l'ouvrent sans changer d'onglet (`common.showAddress`) ; « voir la rue » et les points à vérifier réduisent la feuille et restent dans l'onglet.
+  - **Préparer** : tournée active (ligne « Changer » vers la page Tournées) et charge en deux tuiles, puis lignes à icône vers les pages Rues de la commune (→ éditeur de rue, une page), Ordre de passage, Vérifications, Réglages de l'estimation ; Renommer, Archiver. « Choisir sur la carte » ouvre la page `select` au petit cran.
+  - **Contrôler** : anneau de progression (pourcentage au centre), « n / N adresses traitées », reste estimé, 4 tuiles (ouvrent Par rue, Non traitées, Anomalies), lignes vers Par rue, Anomalies, Non traitées, Passages clôturés ; Rapport (interrupteur « Inclure les heures », partager CSV / JSON) ; Clôturer en rouge. « Sauvegarder la progression » n'est plus que dans le menu ⋯, avec la mention RGPD.
+- [x] **R3 — Dialogues** ✅ (25/10/2026). Alerte iOS 26 (boutons en capsule côte à côte ; action irréversible en rouge : `ui.confirm(msg, label, {destructive})`), feuille d'actions pour le motif (6 lignes, Annuler à part, focus initial sur Annuler), alerte avec champ pour les noms, menu déroulant ⋯, toasts et bandeau de mise à jour en capsule de verre en haut. Matériau plus opaque (`--glass-strong`) pour ce qui porte du texte sur la carte.
+- [x] **R4 — Vérification** ✅ (25/10/2026).
+  - Tests adaptés (outils `openPage`, `openLegend`, `setDetent`, tap centré dans la partie visible du plan) ; nouveaux : crans et pages, glisser au doigt, fiche par-dessus l'onglet, plan ouvert sur la prochaine adresse. Animations CSS coupées dans les tests (`reducedMotion: 'reduce'`).
+  - Audit des cibles de 44 px et des boutons nommés dans toutes les pages de la feuille.
+  - Captures iPhone 13 (WebKit) clair et sombre, et grand écran (Chromium).
+  - Suite : 121 réussis, 3 ignorés (dont les deux tests de crans, sans objet sur grand écran), avec 5 workers. Avec 8 workers et la machine chargée, quelques démarrages WebKit dépassent le délai (§10).
+
 ---
 
 ## 3. Définition de « terminé » pour la v0.1
@@ -446,7 +478,7 @@ neyron-tournees/
 │   ├── sw.js
 │   ├── css/app.css
 │   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js,
-│   │                     #   tabs.js, tourplan.js, report.js, views/ (prepare.js, distribute.js, control.js, common.js) — branche facteur
+│   │                     #   tabs.js, sheet.js, tourplan.js, report.js, views/ (prepare.js, distribute.js, control.js, common.js) — branche facteur
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
@@ -551,6 +583,8 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 
 ## 8. Application (PWA)
 
+> **Branche facteur** : l'interface autour du plan (feuille à crans, onglets, boutons en verre, fiche d'adresse, dialogues) est décrite en §2 ter ; ce qui suit vaut pour le plan lui-même. La légende y est devenue la section « Rues de la tournée » de Distribuer, l'encart GPS la section « À proximité ».
+
 ### 8.1 Rendu du plan (`map.js`, `ui.js`)
 - SVG inline en mètres ; zoom et déplacement via le `viewBox`.
 - Couches, de bas en haut :
@@ -581,7 +615,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   - `tours` : `{id, name, createdAt, archived}` (branche facteur : plus `updatedAt`, `ids[]`, `order[]`, `reverse[]`, `closures[]`, §2 bis) ;
   - `meta` : `deviceId`, compteur `seq`, version des données, préférences.
 - **L'état courant est dérivé du journal** : pour chaque `id`, le dernier événement de la tournée active l'emporte, ordre `(t, dev, seq)` (départage déterministe entre appareils).
-- **Groupes et annulation** : chaque action utilisateur a un `grp` unique. Une action groupée dont les états précédents diffèrent (ex. « Toute la rue faite » alors que certains étaient « à repasser ») est annulée par **plusieurs événements** (un par état précédent), tous avec `undoOf: <grp annulé>`. La pile d'annulation est dérivée du journal (dernières actions de l'appareil non annulées) : elle survit à une relance. **On n'efface jamais rien du journal.**
+- **Groupes et annulation** : chaque action utilisateur a un `grp` unique. Une action groupée dont les états précédents diffèrent (ex. « Toute la rue faite » alors que certains étaient « à repasser ») est annulée par **plusieurs événements** (un par état précédent), tous avec `undoOf: <grp annulé>`. La pile d'annulation est dérivée du journal (dernières actions de l'appareil non annulées) : elle survit à une relance. **On n'efface rien du journal**, sauf le détail des passages clôturés depuis plus de 2 mois (branche facteur, `store.purge`, §13).
 - `navigator.storage.persist()` au premier lancement ; résultat affiché dans le debug.
 - **Export** : `{app: "neyron-tournees", schema: 1, exportedAt, deviceId, tours, events}` (branche facteur : `schema: 2`, formats 1 et 2 importés, §2 bis L7).
 - **Import** : fusion avec dédoublonnage sur `(dev, seq)`, puis recalcul de l'état. Ce format permettra de fusionner plusieurs téléphones.
@@ -603,7 +637,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - Hors contexte sécurisé (HTTP), le GPS n'est pas lancé et un toast l'explique ; un refus (code 1) donne le chemin des réglages iOS (« Sites web Safari »).
 - Le GPS ne marche **pas** en arrière-plan sur iOS : l'interface le rappelle, avec le conseil de garder l'écran allumé.
 - **Bouton localiser** (en haut de la colonne de droite), trois états : `off` → tap → `on` (GPS lancé, centrage sur le premier point, zoom porté à 2,2 px/m au moins) → tap → `follow` (recentrage à chaque position, bouton enfoncé) → tap → `off` (GPS arrêté, point et encart masqués). Un glisser de la carte (`userpan`) repasse de `follow` à `on` ; un pincement (`userzoom`) ne coupe pas le suivi. Pas de recentrage pendant un geste.
-- **Encart** (en bas à gauche, à côté des contrôles) : ligne d'état (précision / recherche du signal / position ancienne / hors du plan) puis 3 lignes « adresse · distance · Fait ». Il ignore les rues masquées et garde les « à repasser » (badge). Il est masqué pendant que le panneau d'adresse est ouvert. Sa hauteur entre dans la marge basse de la carte (centrages) et décale la barre d'échelle (`--nearby-h`).
+- **Encart** (branche facteur : section « À proximité » de Distribuer, §2 ter) : ligne d'état (précision / recherche du signal / position ancienne / hors du plan) puis 3 lignes « adresse · distance · Fait ». Il ignore les rues masquées et garde les « à repasser » (badge). Il est masqué pendant que le panneau d'adresse est ouvert. Sa hauteur entre dans la marge basse de la carte (centrages) et décale la barre d'échelle (`--nearby-h`).
 - **Sécurité du geste** : la liste est figée pendant un appui sur l'encart (+ 400 ms), pour qu'une nouvelle position ne réordonne pas les lignes entre l'appui et le relâcher (sinon « Fait » partirait sur une autre adresse). Le rafraîchissement qui suit une action est, lui, immédiat.
 - `GpsTracker.inject(x, y, acc)` injecte une position simulée (panneau debug, phase 7). `window.neyronApp.gps` expose le contrôleur.
 - Les toasts s'affichent **en haut**, sous la barre, pour ne pas chevaucher l'encart ni le panneau.
@@ -715,7 +749,15 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   - Rarement (environ 1 exécution WebKit sur 50 dans les tests longs, sous charge), un clic attend « visible, enabled and stable » jusqu'au délai, sans aucune nouvelle tentative dans le journal. La page, elle, répond : capture et instantané d'accessibilité fonctionnent. C'est le `requestAnimationFrame` du script injecté par Playwright qui ne vient plus.
   - Côté app, au repos : 0 mutation du DOM, 0 rendu de carte, ~50 images/s. Test A/B L4 / L5 (navigation et Préparer, × 10) : 0 blocage des deux côtés.
   - D'où un second essai pour WebKit seulement (`retries: 1`), signalé « flaky » dans le rapport.
-- **Taper un numéro pendant une animation de la carte** (recentrage de « Reprendre », cadrage) : l'animation continue et déplace le plan sous le doigt. Les outils de test appellent `map._stopAnim()` avant de calculer la position.
+- **Taper un numéro pendant une animation de la carte** (recentrage vers la prochaine adresse, cadrage) : l'animation continue et déplace le plan sous le doigt. Les outils de test appellent `map._stopAnim()` avant de calculer la position.
+- **Feuille et tests** (refonte) :
+  - Le centre de l'écran peut être sous la feuille : les outils de test centrent l'adresse dans la partie visible (`map.centerOn`, qui tient compte des marges) avant de taper.
+  - Au grand cran, les boutons de la carte sont masqués : passer au cran moyen avant de toucher le menu ⋯ ou Annuler.
+  - Un onglet retrouve la page où on l'avait laissé : `openPage` retouche l'onglet pour revenir à la page principale.
+- **Captures sous WebKit (Windows)** : les animations CSS y sont lentes, une capture peut tomber en pleine entrée de page ou de dialogue (page blanche, dialogue à moitié transparent). Capturer avec `reducedMotion: 'reduce'`, comme les tests. Ce WebKit **ne dessine pas** `backdrop-filter` (le plan reste net sous le verre) : le flou ne se juge que sur l'iPhone, d'où des matériaux assez opaques pour rester lisibles sans flou.
+- **Machine chargée** (navigateur de l'utilisateur ouvert) : avec 8 workers, des démarrages de l'app sous WebKit dépassent 15 s (`waitReady`), sans rapport avec le code (un essai sans flou a donné plus d'échecs). Lancer avec `--workers=4` ou `5` pour distinguer les vrais échecs.
+- **Séparateurs des listes groupées** : `.group > * + *::before` dessine le trait fin ; un enfant direct ne peut donc pas utiliser son propre `::before` (pastille de couleur de l'ordre de passage : élément `.order-dot`).
+- **`<dialog>` en bas d'écran** : les styles du navigateur centrent un dialogue modal et bornent sa hauteur ; la feuille d'actions se place en `position: fixed; inset: auto 0 0 0`, sans `max-height`.
 - **Animations dans les tests** : mesurer un zoom après un délai fixe est instable sous WebKit chargé. Attendre la fin de l'animation (`map._anim` nul, `k` modifié).
 - **Safari et pincement de page** : iOS ignore `user-scalable=no` ; les `gesturestart/change` sont bloqués au niveau du document, et sur macOS le pincement trackpad (événements `gesture*` sans pointeur actif) zoome la carte.
 - **v0.2 (PDF reportlab)** : le mode de rendu du texte (`Tr`) persiste → entourer les halos de `saveState()` / `restoreState()` ; exposants et indices Unicode non rendus.
@@ -746,7 +788,8 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   - **tout fichier chargé hors ligne est dans le précache** ;
   - mise à jour par le bandeau, sur une copie du site servie sur un port libre ;
   - **stamp à jour** (`build.py --check`, Chromium seulement).
-- Outils communs dans `tests/helpers.js` : `openApp`, `tapAddress` (position écran calculée par la carte, §10), identifiants BAN et positions GPS de référence, `trackErrors` (toute erreur JS ou `console.error` fait échouer le test).
+- Outils communs dans `tests/helpers.js` : `openApp`, `tapAddress` (position écran calculée par la carte, adresse centrée hors de la feuille, §10), `setDetent`, `openPage(page, onglet, ligne)` (page principale de l'onglet, grand cran, puis la ligne), `openLegend` (rues de la tournée), identifiants BAN et positions GPS de référence, `trackErrors` (toute erreur JS ou `console.error` fait échouer le test).
+- Les tests tournent avec `reducedMotion: 'reduce'` : transitions et animations CSS coupées, une cible n'est jamais touchée en mouvement.
 - Vérifié le 19/10/2026 :
   - `--repeat-each=3` : 144/144, aucun test instable ;
   - des sabotages volontaires sont détectés : encart limité à 2 adresses, module retiré du précache.
@@ -816,7 +859,7 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
 ### Revue de la branche facteur (L7, 20/10/2026)
 | Donnée | Où | Contenu | Mesure |
 |---|---|---|---|
-| Journal (`events`) | IndexedDB, sur l'appareil | chaque pointage horodaté, motif d'anomalie codé | jamais envoyé ; conservé sans limite (voir ci-dessous) |
+| Journal (`events`) | IndexedDB, sur l'appareil | chaque pointage horodaté, motif d'anomalie codé | jamais envoyé ; détail d'un passage clôturé **effacé après 2 mois** (voir ci-dessous) |
 | Motifs d'anomalie | journal, rapport | 6 codes fermés ; « destinataire inconnu » concerne les occupants | aucune note libre ; motifs validés par l'utilisateur |
 | Rapport CSV / JSON | partagé à la main | une ligne par adresse : statut, motif | **sans heure par défaut** ; heures sur demande explicite (case) |
 | Historique des passages | fiche de tournée | comptes par passage, anomalies par motif | **agrégé**, sans détail par adresse ni heure |
@@ -825,7 +868,11 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
 | Préférences (`localStorage`) | appareil | thème, onglet, réglages de charge, reprise, heures du rapport | aucune donnée personnelle |
 
 - Aucun flux réseau nouveau : CSP inchangée, aucun service tiers, tout reste sur l'appareil.
-- **Point ouvert (à valider)** : le journal n'est jamais purgé, une règle de conception pour l'annulation et la fusion. Pour un usage réel, la limitation de conservation demanderait une purge des événements antérieurs aux passages clôturés depuis N jours. Le bilan agrégé des passages serait gardé ; le passage en cours et l'annulation n'en dépendent pas. Non fait sans accord.
+- **Conservation limitée** (validée le 25/10/2026) : `store.purge()` efface, à chaque lancement et après chaque import, les événements antérieurs à la dernière clôture de plus de **60 jours** de chaque tournée (`RETENTION_DAYS`, durée recommandée par la CNIL pour le suivi d'activité d'un salarié).
+  - Le bilan agrégé des passages est gardé ; le passage en cours et l'annulation (passage en cours seulement) n'en dépendent pas ; `seq` ne redescend jamais (`meta.seq`).
+  - Une sauvegarde qui rapporte le détail d'un passage déjà effacé le voit effacé à nouveau à l'import (le résumé ne le compte pas).
+  - Une tournée jamais clôturée garde tout son journal (c'est son passage en cours).
+  - Le panneau debug affiche le nombre d'événements effacés depuis le lancement.
 
 ---
 
@@ -899,3 +946,14 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - Store : écrire d'abord, modifier la mémoire ensuite.
   - Cibles tactiles portées à 44 px partout, et correction de l'écrasement des boutons dans les vues qui défilent.
   - Revue RGPD consignée en §13. La purge du journal est proposée à l'utilisateur, pas faite, car elle touche la règle « on n'efface jamais rien ».
+- **25/10/2026** — Commit `f779a86` (L7). Décisions de l'utilisateur :
+  - effacement du détail des passages clôturés depuis plus de **2 mois** (bilans gardés, §13) ;
+  - **pas de publication pour l'instant** : refonte complète de l'interface d'abord (§2 ter), style Apple **Liquid Glass** (iOS 26), carte plein écran sous une **feuille à crans** dont les 3 onglets changent le contenu (comme Localiser ou Plans), au plus simple sans perdre de fonction.
+- **25/10/2026** — Refonte (R1 à R4), choix de mise en œuvre :
+  - plus de mode « Reprendre » : la prochaine adresse est toujours en haut de Distribuer, ce qui supprime un geste et un état mémorisé ;
+  - la fiche d'adresse et « voir sur le plan » restent dans l'onglet courant, puisque la carte est visible partout ; on revient à la liste en fermant la fiche ;
+  - les sections repliables deviennent des pages de la feuille (navigation iOS), l'éditeur de rue une page plutôt qu'un dialogue ;
+  - la sauvegarde ne reste que dans le menu ⋯ (elle doublait la ligne de Contrôler) ;
+  - grand cran : les boutons de la carte s'effacent, comme dans Plans ;
+  - pas de SF Symbols (licence réservée aux plateformes Apple) : icônes SVG dessinées dans le même esprit ;
+  - couleurs système d'Apple assombries pour les statuts sur fond plein (vert `#248a3d`, rouge `#d70015`), « À repasser » et « Remettre à faire » en boutons teintés.

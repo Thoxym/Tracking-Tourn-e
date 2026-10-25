@@ -1,6 +1,7 @@
-// Onglet Préparer : les tournées (créer, importer un secteur, choisir, renommer, archiver, restaurer), la
-// composition de la tournée active (par rue : toute la rue, côté pair / impair, plage de numéros ; ou numéro
-// par numéro sur la carte), son ordre de passage, sa charge estimée et les vérifications avant départ.
+// Onglet Préparer : la tournée active et sa charge estimée, puis des pages de la feuille : les tournées (créer,
+// importer un secteur, choisir, archiver, restaurer), les rues de la commune et l'éditeur de rue (toute la rue,
+// côté pair / impair, plage de numéros), l'ordre de passage, les vérifications avant départ, les réglages de
+// l'estimation. « Choisir sur la carte » réduit la feuille à une barre : un toucher ajoute ou retire un numéro.
 
 import { ST_DONE } from '../store.js';
 import {
@@ -54,7 +55,7 @@ function tourRow({ name, sub, active = false, label, onClick }) {
 function smallButton({ cls, label, paths, disabled = false, onClick, data = {} }) {
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = `iconbtn flat order-btn ${cls}`;
+  b.className = `order-btn ${cls}`;
   b.setAttribute('aria-label', label);
   b.title = label;
   b.disabled = disabled;
@@ -101,8 +102,8 @@ export class PrepareView {
     });
     this._bindEditor();
     this._bindSettings();
-    app.tabs.onChange((tab) => {
-      if (this.selecting && tab !== 'prepare') this.stopSelect(false);
+    app.tabs.onChange((tab, prev) => {
+      if (this.selecting && (tab !== 'prepare' || tab === prev)) this.stopSelect(tab === 'prepare');
       if (tab === 'prepare') this.render();
     });
     app.store.onChange(() => {
@@ -173,6 +174,7 @@ export class PrepareView {
     $('prep-load-dist').textContent = `≈ ${formatDistance(w.meters)}`;
     $('prep-load-time').textContent = `≈ ${formatDuration(w.seconds)}`;
     $('btn-tour-archive').disabled = store.liveTours().length < 2;  // la dernière tournée en cours reste
+    $('prep-tour-row').setAttribute('aria-label', `Tournée active : ${t.name}. Changer de tournée`);
   }
 
   // rues de la tournée dans l'ordre de passage : monter, descendre, inverser le sens
@@ -194,7 +196,7 @@ export class PrepareView {
       const main = span('vrow-main', '');
       main.append(span('vrow-name', `${k + 1}. ${name}`),
         span('vrow-sub', `${plural(addrs.length, 'numéro')} · n° ${num(first)} → ${num(last)} · ${formatDistance(mstLength(addrs))}`));
-      li.append(main,
+      li.append(span('order-dot', ''), main,
         smallButton({ cls: `order-rev${rev ? ' on' : ''}`, label: `Inverser le sens : ${name}`, data: { s, act: 'rev' },
           paths: ['M7 4v16M3.5 16.5L7 20l3.5-3.5', 'M17 20V4M13.5 7.5L17 4l3.5 3.5'], onClick: () => this.toggleReverse(s) }),
         smallButton({ cls: 'order-up', label: `Monter : ${name}`, disabled: k === 0, data: { s, act: 'up' },
@@ -221,7 +223,10 @@ export class PrepareView {
     const box = $('prep-checks');
     if (!tourAddrs.length) {
       $('prep-checks-n').textContent = 'tournée vide';
-      box.replaceChildren(span('list-empty', 'Composez la tournée pour lancer les vérifications.'));
+      const p = document.createElement('p');
+      p.className = 'foot first';
+      p.textContent = 'Composez la tournée pour lancer les vérifications.';
+      box.replaceChildren(p);
       return;
     }
     const color = (a) => ui.streets[a.s].colors[ui.isDark() ? 1 : 0];
@@ -229,7 +234,7 @@ export class PrepareView {
     const noBld = tourAddrs.filter((a) => !a.bat);
     const near = nearUnaddressed(data.unaddressed || [], tourAddrs);
     const n = gaps.length + noBld.length + near.length;
-    $('prep-checks-n').textContent = n ? plural(n, 'point à vérifier', 'points à vérifier') : 'rien à signaler';
+    $('prep-checks-n').textContent = n ? plural(n, 'point', 'points') : 'rien à signaler';
     box.replaceChildren(
       this._checkGroup({
         id: 'gaps',
@@ -268,28 +273,32 @@ export class PrepareView {
     );
   }
 
+  // groupe de vérification : titre, lignes (un toucher montre le point), explication, action éventuelle
   _checkGroup({ id, title, none, help, rows, action = null }) {
-    const g = document.createElement('div');
+    const g = document.createElement('section');
     g.className = 'check-group';
     g.dataset.check = id;
     const h = document.createElement('h4');
     h.textContent = rows.length ? `${title} (${rows.length})` : title;
-    g.append(h);
+    const p = document.createElement('p');
+    p.className = 'foot';
     if (!rows.length) {
-      g.append(span('check-none', none));
+      const ok = document.createElement('div');
+      ok.className = 'group';
+      const line = span('row check-none', none);
+      ok.append(line);
+      g.append(h, ok);
       return g;
     }
-    const p = document.createElement('p');
-    p.className = 'view-note';
     p.textContent = help;
     const ul = document.createElement('ul');
-    ul.className = 'vlist';
+    ul.className = 'group';
     ul.append(...rows.map((r) => streetRow(r)));
-    g.append(p, ul);
+    g.append(h, ul, p);
     if (action) {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'btn wide';
+      b.className = 'btn tinted wide';
       b.textContent = action.label;
       b.addEventListener('click', action.run);
       g.append(b);
@@ -344,7 +353,7 @@ export class PrepareView {
   async archiveTour() {
     const { store, ui } = this.app;
     const t = this.tour;
-    if (!(await ui.confirm(`Archiver « ${t.name} » ? Sa progression est conservée et vous pourrez la restaurer.`, 'Archiver'))) return;
+    if (!(await ui.confirm(`Archiver « ${t.name} » ? Sa progression est conservée et vous pourrez la restaurer.`, 'Archiver', { destructive: true }))) return;
     if (await store.archiveTour(t.id)) ui.toast(`« ${t.name} » archivée · tournée active : ${store.activeTour.name}`, { ms: 4000 });
     else ui.toast('C\'est la seule tournée en cours : créez-en une autre avant d\'archiver celle-ci.', { ms: 5000 });
   }
@@ -444,18 +453,14 @@ export class PrepareView {
   // ------------------------------------------------- éditeur de rue
 
   _bindEditor() {
-    const dlg = $('street-editor');
+    const page = $('street-editor');
     const update = () => this._preview();
-    for (const r of dlg.querySelectorAll('input[name="se-side"]')) r.addEventListener('change', update);
+    for (const r of page.querySelectorAll('input[name="se-side"]')) r.addEventListener('change', update);
     $('se-from').addEventListener('input', update);
     $('se-to').addEventListener('input', update);
     $('se-add').addEventListener('click', () => this._applyEditor(true));
     $('se-remove').addEventListener('click', () => this._applyEditor(false));
-    $('se-map').addEventListener('click', () => {
-      const i = this.editing;
-      dlg.close();
-      showStreet(this.app, i);
-    });
+    $('se-map').addEventListener('click', () => showStreet(this.app, this.editing));
   }
 
   openEditor(i) {
@@ -469,7 +474,7 @@ export class PrepareView {
     $('se-from').value = '';
     $('se-to').value = '';
     this._preview();
-    $('street-editor').showModal();
+    this.app.panel.push($('view-prepare'), 'street');
   }
 
   // numéros de la rue retenus par le côté et la plage
@@ -504,37 +509,42 @@ export class PrepareView {
       }
     }
     const name = this.app.ui.streets[this.editing].name;
-    $('street-editor').close();
     if (!n) return;
     await this.setIds(ids);
+    this._preview();
     this.app.ui.toast(`${name} : ${n} ${agree(n, 'numéro')} ${agree(n, add ? 'ajouté' : 'retiré')}`);
   }
 
   // ------------------------------------------------ composition sur la carte
 
   startSelect() {
-    const { map, ui } = this.app;
+    const { map, ui, panel } = this.app;
     this.selecting = true;
     $('app').dataset.mode = 'select';
-    $('view-prepare').hidden = true;
-    $('select-bar').hidden = false;
+    ui.closeSheet();
+    map.selectAddress(null);
     map.selecting = true;
     ui.tapOverride = (a) => this.toggle(a);
     this._updateSelectCount();
+    panel.push($('view-prepare'), 'select');
+    panel.setDetent('peek');
+    ui.updatePadding();
     map.fitAll();
   }
 
+  // showView : revenir à la page principale de Préparer (false : l'onglet a changé)
   stopSelect(showView = true) {
-    const { map, ui } = this.app;
+    const { map, ui, panel } = this.app;
     this.selecting = false;
     delete $('app').dataset.mode;
-    $('select-bar').hidden = true;
     map.selecting = false;
     ui.tapOverride = null;
+    panel.reset($('view-prepare'));
     if (showView && this.app.tabs.current === 'prepare') {
-      $('view-prepare').hidden = false;
+      panel.setDetent('medium');
       this.render();
     }
+    this.app.distribute?.render();
   }
 
   async toggle(a) {

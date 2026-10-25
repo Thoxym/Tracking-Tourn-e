@@ -3,6 +3,8 @@
 // GPS, de l'écran allumé, du stockage, du service worker et les versions ; appui long sur la carte =
 // position simulée ; journal des dernières erreurs JS (pas de console sur l'iPhone).
 
+import { RETENTION_DAYS } from './store.js';
+
 const FLAG_KEY = 'neyron-tournees.debug';
 const MAX_ERRORS = 15;
 const errors = [];
@@ -72,7 +74,7 @@ export class DebugPanel {
     writeFlag(true);
     const el = (this.el = document.createElement('section'));
     el.id = 'debug';
-    el.className = 'debug panel';
+    el.className = 'debug glass';
     el.setAttribute('aria-label', 'Panneau debug');
     const head = document.createElement('div');
     head.className = 'debug-head';
@@ -188,7 +190,7 @@ export class DebugPanel {
         ['persisted()', a.persisted === undefined ? '…' : String(a.persisted)],
         ['occupation', a.estimate ? `${mb(a.estimate.usage)} / ${mb(a.estimate.quota)}` : (a.storageError || '…')],
         ['IndexedDB', store.error ? `indisponible (${store.error.message}) : mémoire seule` : 'ok'],
-        ['journal', `${store.allEvents.length} événements, tournée « ${store.tour} »`],
+        ['journal', `${store.allEvents.length} événements${store.purged ? ` (${store.purged} effacés, passages clos > ${RETENTION_DAYS} j)` : ''}, tournée « ${store.tour} »`],
         ['appareil', `${store.deviceId}, seq ${store.seq}`],
         ['dernier export', fmtTime(store.meta.lastExportAt)],
       ]],

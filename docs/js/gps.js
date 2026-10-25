@@ -287,11 +287,8 @@ export class GpsController {
 
   refresh(message, force = false) {
     const card = $('nearby');
-    const show = this.mode !== 'off' && !this.ui.sheetAddress && !this.ui.guided;  // reprise : la carte « prochaine » prend la place
-    if (card.hidden === show) {
-      card.hidden = !show;
-      this.ui.updatePadding();
-    }
+    const show = this.mode !== 'off';  // section « À proximité » de l'onglet Distribuer
+    card.hidden = !show;
     const pos = this.tracker.last;
     const q = this.tracker.quality();
     this.map.setGps(this.mode !== 'off' && pos ? { ...pos, quality: q } : null);

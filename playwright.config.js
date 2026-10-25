@@ -24,6 +24,8 @@ module.exports = defineConfig({
     timezoneId: 'Europe/Paris',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    // transitions CSS coupées (feuille, pages, dialogues) : une cible n'est jamais touchée en plein mouvement
+    reducedMotion: 'reduce',
   },
   projects: [
     // moteur de Safari, profil iPhone (écran, tactile, user agent) : la cible réelle. Sous Windows, WebKit

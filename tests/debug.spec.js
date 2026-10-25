@@ -12,6 +12,7 @@ async function longPressOn(page, id) {
     const a = map.byId.get(id);
     map._stopAnim();  // une animation en cours (recentrage) déplacerait la carte sous le doigt
     map.setView(a.x, a.y, 3);
+    map.centerOn(a.x, a.y, { minK: 3, animate: false });  // dans la partie visible du plan, hors feuille
     return map.toScreen(a.x, a.y);
   }, id);
   await page.mouse.move(x, y);

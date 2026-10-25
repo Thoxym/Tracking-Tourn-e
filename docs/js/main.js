@@ -5,6 +5,7 @@ import { GpsController } from './gps.js';
 import { BackupController } from './io.js';
 import { MapView } from './map.js';
 import { registerServiceWorker } from './pwa.js';
+import { Panel } from './sheet.js';
 import { Store } from './store.js';
 import { TabBar } from './tabs.js';
 import { UI } from './ui.js';
@@ -27,18 +28,19 @@ async function start() {
     const [data, plan] = await Promise.all([loadJSON('./data/addresses.json'), loadJSON('./data/plan.json')]);
     const store = await Store.open(data.version, data.presets || []);
     const map = new MapView(document.getElementById('map'), data, plan);
-    const ui = new UI(map, data, store);
+    const panel = new Panel();
+    const ui = new UI(map, data, store, panel);
     const gps = new GpsController({ map, ui, store, data });
     ui.onSheet(() => gps.refresh());
     const wake = new WakeLockController({ ui });
     gps.wake = wake;
     const backup = new BackupController({ ui, store, map });
     const versions = { app: null, data: data.version };
-    const tabs = new TabBar({ ui });
-    const app = { map, ui, data, store, gps, wake, backup, versions, tabs };
+    const tabs = new TabBar({ ui, panel });
+    const app = { map, ui, data, store, gps, wake, backup, versions, tabs, panel };
     app.prepare = new PrepareView(app);
     app.distribute = new DistributeView(app);
-    app.control = new ControlView(app);  // après la reprise : la clôture l'arrête
+    app.control = new ControlView(app);
     app.debug = new DebugPanel(app);
     window.neyronApp = app;  // accès pour les tests
     splash.hidden = true;

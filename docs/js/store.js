@@ -1,5 +1,6 @@
 // Progression : journal d'événements dans IndexedDB (base « neyron-tournees »).
-// L'état courant est dérivé du journal ; rien n'est jamais effacé : « Annuler » ajoute des événements.
+// L'état courant est dérivé du journal ; « Annuler » ajoute des événements. Seule exception : le détail des
+// passages clôturés depuis plus de RETENTION_MS est effacé (RGPD, conservation limitée), leur bilan reste.
 //
 // events : {dev, seq, t, tour, ids[], st, why?, grp, undoOf?}  clé [dev, seq] ; why = motif d'une anomalie
 // tours  : {id, name, createdAt, updatedAt, archived, ids[], order?, reverse?, closures?}
@@ -10,7 +11,7 @@
 //
 // La progression est propre à chaque tournée (champ `tour` des événements). Changer la composition
 // n'efface rien : une adresse retirée puis remise retrouve son statut. Clôturer un passage pose une borne
-// (closures[].at) : seuls les événements postérieurs comptent pour le passage en cours, le journal reste entier.
+// (closures[].at) : seuls les événements postérieurs comptent pour le passage en cours.
 
 const DB_NAME = 'neyron-tournees';
 const DB_VERSION = 1;
@@ -37,6 +38,10 @@ export const REASONS = [
 export const REASON_CODES = REASONS.map((r) => r.code);
 export const reasonLabel = (code) => REASONS.find((r) => r.code === code)?.label || 'Motif inconnu';
 export const isTreated = (st) => st === ST_DONE || st === ST_ANOMALY;  // distribuée, ou anomalie signalée
+// conservation du détail d'un passage clôturé (pointages horodatés) : 2 mois, durée recommandée par la CNIL
+// pour les données de suivi d'activité d'un salarié (choix de l'utilisateur, 25/10/2026)
+export const RETENTION_DAYS = 60;
+const RETENTION_MS = RETENTION_DAYS * 86_400_000;
 
 // ordre total du journal : heure, puis appareil, puis numéro de séquence
 export function compareEvents(a, b) {
@@ -117,6 +122,7 @@ export class Store {
     this.listeners = new Set();
     this.persistent = null;
     this.presets = [];
+    this.purged = 0;        // événements effacés depuis l'ouverture (panneau debug)
   }
 
   // presets : tournées prédéfinies des données ({id, name, ids}) ; « default » complète la tournée de la v0.1
@@ -161,7 +167,34 @@ export class Store {
     const usable = (id) => this.tours.some((t) => t.id === id && !t.archived);
     this.tour = usable(m.activeTour) ? m.activeTour : (this.liveTours()[0] || this.tours[0]).id;
     await this._save({ deviceId: this.deviceId, seq: this.seq, activeTour: this.tour, dataVersion }, this.tours);
+    try {
+      await this.purge();
+    } catch { /* effacement impossible (stockage) : nouvel essai au prochain lancement */ }
     this._reload();
+  }
+
+  // Effacement des événements des passages clôturés depuis plus de RETENTION_MS : pour chaque tournée, tout
+  // ce qui précède la dernière borne assez ancienne. Le passage en cours, la pile d'annulation (passage en
+  // cours seulement) et les bilans agrégés (closures) ne sont pas touchés ; seq ne redescend jamais (meta.seq).
+  async purge(now = Date.now()) {
+    const bound = new Map();
+    for (const t of this.tours) {
+      let b = 0;
+      for (const c of t.closures || []) if (c.at <= now - RETENTION_MS && c.at > b) b = c.at;
+      if (b) bound.set(t.id, b);
+    }
+    if (!bound.size) return 0;
+    const old = (e) => e.t <= (bound.get(e.tour) || 0);
+    const gone = this.allEvents.filter(old);
+    if (!gone.length) return 0;
+    if (this.db) {
+      await transact(this.db, ['events'], 'readwrite', (tx) => {
+        for (const e of gone) tx.objectStore('events').delete([e.dev, e.seq]);
+      });
+    }
+    this.allEvents = this.allEvents.filter((e) => !old(e));
+    this.purged += gone.length;
+    return gone.length;
   }
 
   async _save(meta, tours = []) {
@@ -450,8 +483,11 @@ export class Store {
     for (const e of added) this.allEvents.push(e);
     this.tours.push(...newTours);
     for (const t of updated) Object.assign(this.tours.find((x) => x.id === t.id), t);
+    // une sauvegarde peut rapporter le détail de passages déjà effacés ici (ou poser des bornes anciennes)
+    await this.purge().catch(() => 0);
+    const kept = new Set(this.allEvents);
     this._reload();
-    const result = { type: 'import', added: added.length, duplicates: events.length - added.length,
+    const result = { type: 'import', added: added.filter((e) => kept.has(e)).length, duplicates: events.length - added.length,
       tours: newTours.length + updated.length };
     this._emit(result);
     return result;

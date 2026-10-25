@@ -1,4 +1,4 @@
-// Éléments partagés par les vues Préparer et Contrôler.
+// Éléments partagés par les vues de la feuille (Préparer, Distribuer, Contrôler).
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 
@@ -66,27 +66,29 @@ export function streetRow({ color, name, sub, count = null, again = 0, anomalies
   return li;
 }
 
-// Montrer une rue sur la carte : onglet Distribuer, rue sélectionnée et cadrée
+// Montrer une rue sur le plan, sans quitter l'onglet : feuille réduite, rue sélectionnée et cadrée
 export function showStreet(app, i) {
-  app.tabs.select('distribute');
+  app.ui.closeSheet();
   app.ui.selectStreet(i);
+  if (!app.panel.desktop) app.panel.setDetent('peek');
 }
 
-// Montrer un point à vérifier : onglet Distribuer, carte centrée dessus, repère
+// Montrer un point à vérifier : feuille réduite, plan centré dessus, repère
 export function showPoint(app, x, y) {
-  app.tabs.select('distribute');
+  app.ui.closeSheet();
   app.ui.selectStreet(null);
+  if (!app.panel.desktop) app.panel.setDetent('peek');
+  app.ui.updatePadding();
   app.map.centerOn(x, y, { minK: 3 });
   app.map.mark(x, y);
 }
 
-// Montrer une adresse de la tournée : onglet Distribuer, carte centrée, panneau d'adresse ouvert
+// Montrer une adresse : plan centré, fiche d'adresse ouverte par-dessus l'onglet courant
 export function showAddress(app, a) {
-  app.tabs.select('distribute');
   app.ui.selectStreet(null);
   app.map.mark(null);
-  app.map.centerOn(a.x, a.y, { minK: 3, animate: false });
   app.ui.openSheet(a);
+  app.map.centerOn(a.x, a.y, { minK: 3, animate: false });
 }
 
 // Méthodes d'une vue qui écrivent dans le stockage : une erreur (quota dépassé, base indisponible) est

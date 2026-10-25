@@ -1,5 +1,5 @@
-// Interface autour du plan : légende et progression, pointage, annulation, barre d'échelle, thème,
-// panneau d'adresse, toasts, confirmations.
+// Interface autour du plan : rues de la tournée et progression, pointage, annulation, barre d'échelle, thème,
+// fiche d'adresse (page de la feuille), toasts, alertes, choix du motif (feuille d'actions).
 
 import { REASONS, ST_AGAIN, ST_ANOMALY, ST_DONE, ST_TODO, isTreated, reasonLabel } from './store.js';
 import { sequence, streetKeys, streetOrder } from './tourplan.js';
@@ -12,7 +12,6 @@ const THEME_LABELS = { auto: 'automatique', light: 'clair', dark: 'sombre' };
 export const STATUS_LABELS = { [ST_TODO]: 'à faire', [ST_DONE]: 'distribué', [ST_AGAIN]: 'à repasser', [ST_ANOMALY]: 'anomalie' };
 // « distribué », « anomalie (boîte absente) »
 export const statusText = (st, why) => (st === ST_ANOMALY ? `anomalie (${reasonLabel(why).toLowerCase()})` : STATUS_LABELS[st]);
-const desktop = window.matchMedia('(min-width: 900px)');
 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
 const SVGNS = 'http://www.w3.org/2000/svg';
 
@@ -34,23 +33,23 @@ function icon(paths) {
 }
 
 export class UI {
-  constructor(map, data, store) {
+  constructor(map, data, store, panel) {
     this.map = map;
     this.data = data;
     this.store = store;
+    this.panel = panel;
     this.streets = data.streets;
     this.byStreet = this.streets.map(() => []);  // adresses de la tournée active, par rue (_applyTour)
     this.keys = streetKeys(data.addresses, this.streets.length);
     this.order = [];  // rues de la tournée active dans l'ordre de passage
     this.sheetListeners = [];
     this.tapOverride = null;  // composition sur la carte (Préparer) : le tap ajoute / retire au lieu de pointer
-    this.guided = false;      // reprise de la tournée (Distribuer) : l'encart GPS laisse la place à la carte « prochaine »
     this._buildLegend();
     this._applyTour();
     this._initTheme();
     this._bindControls();
     this._bindMap();
-    this.setLegendOpen(desktop.matches);
+    panel.onChange(() => this.updatePadding());
     store.onChange((d) => {
       if (d && (d.type === 'tour' || d.type === 'import')) this._applyTour(d.change?.includes('active'));
       this.refresh();
@@ -65,6 +64,7 @@ export class UI {
     this.map.setScope(tour ? tour.ids : []);
     this.byStreet = this.streets.map((_, i) => this.map.pointable.filter((a) => a.s === i && this.map.inScope(a)));
     this.order = tour ? streetOrder(tour, this.byStreet, this.keys) : [];
+    $('dist-title').textContent = tour ? tour.name : 'Tournée';
     $('legend-list').append(...this.order.map((i) => this.legendRows[i]),
       ...this.legendRows.filter((_, i) => !this.byStreet[i].length));
     this.filterLegend($('legend-search').value);
@@ -105,7 +105,10 @@ export class UI {
     });
     $('total-progress').textContent = `${treated}/${total}`;
     $('btn-undo').disabled = !this.store.canUndo();
-    if (this.sheetAddress) this._fillSheet(this.sheetAddress);
+    if (this.sheetAddress) {
+      this._fillSheet(this.sheetAddress);
+      this.panel.layout();
+    }
   }
 
   async setStatus(ids, st, why = null) {
@@ -287,23 +290,12 @@ export class UI {
     $('menu-version').textContent = `Tournées de Neyron v0.1 · app ${app || '?'} · données ${data || '?'}`;
   }
 
-  setLegendOpen(open) {
-    $('legend').hidden = !open;
-    $('btn-legend').setAttribute('aria-expanded', String(open));
-    this.updatePadding();
-  }
-
-  // zones couvertes par l'interface, pour que les cadrages ne passent pas dessous. Le dock (en bas à gauche)
-  // empile « Reprendre », l'encart GPS et la carte « prochaine adresse »
+  // zones couvertes par l'interface, pour que les cadrages ne passent pas dessous : les boutons du haut, la
+  // feuille (en bas au téléphone, à gauche sur grand écran)
   updatePadding() {
     const r = this.map.container.getBoundingClientRect();
-    const top = $('btn-legend').getBoundingClientRect().bottom - r.top;
-    const legend = $('legend');
-    const left = desktop.matches && !legend.hidden ? legend.getBoundingClientRect().right - r.left : 0;
-    const dock = $('dock');
-    const bottom = dock.offsetHeight ? r.bottom - dock.getBoundingClientRect().top : 0;
-    document.getElementById('app').style.setProperty('--dock-h', `${Math.max(0, bottom)}px`);
-    this.map.setPadding({ top, left, right: 0, bottom });
+    const top = Math.max(0, $('btn-undo').getBoundingClientRect().bottom - r.top);
+    this.map.setPadding({ top, left: this.panel.coveredLeft(), right: 0, bottom: this.panel.covered() });
   }
 
   onSheet(fn) {
@@ -317,7 +309,7 @@ export class UI {
         input.checked = true;
         this.map.setStreetVisible(i, true);
       }
-      if (!desktop.matches) this.setLegendOpen(false);  // mobile : la légende couvre la carte
+      if (!this.panel.desktop && this.panel.detent !== 'peek') this.panel.setDetent('peek');  // dégager la carte
     }
     this.updatePadding();
     this.map.selectStreet(i);
@@ -327,8 +319,6 @@ export class UI {
   // ----------------------------------------------------------- contrôles
 
   _bindControls() {
-    $('btn-legend').addEventListener('click', () => this.setLegendOpen($('legend').hidden));
-    $('btn-legend-close').addEventListener('click', () => this.setLegendOpen(false));
     $('btn-theme').addEventListener('click', () => this.cycleTheme());
     $('btn-menu').addEventListener('click', () => this.setMenuOpen($('menu').hidden));
     $('menu').addEventListener('click', (e) => {
@@ -370,17 +360,24 @@ export class UI {
         return;
       }
       if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;  // un dialogue gère Échap lui-même
+      const page = this.panel.view && this.panel.page();
       if (!$('menu').hidden) this.setMenuOpen(false);
       else if (!$('sheet').hidden) this.closeSheet();
-      else if (!$('legend').hidden && !desktop.matches) this.setLegendOpen(false);
+      else if (page && page.querySelector('[data-back]')) this.panel.back(this.panel.view);
       else if (this.map.selectedStreet != null) this.selectStreet(null);
     });
-    desktop.addEventListener('change', () => this.setLegendOpen(desktop.matches));
     window.addEventListener('resize', () => this.updatePadding());
   }
 
   _bindMap() {
-    this.map.on('view', () => this._updateScale());
+    this.map.on('view', () => {
+      this._updateScale();
+      // échelle affichée pendant et juste après un changement de vue, comme dans Plans
+      const bar = $('scalebar');
+      bar.classList.add('show');
+      clearTimeout(this._scaleTimer);
+      this._scaleTimer = setTimeout(() => bar.classList.remove('show'), 1600);
+    });
     this.map.on('tap', ({ address }) => {
       if (this.tapOverride) {
         if (address) this.tapOverride(address);
@@ -422,7 +419,7 @@ export class UI {
     $('reason-list').replaceChildren(...REASONS.map(({ code, label }) => {
       const b = document.createElement('button');
       b.type = 'submit';
-      b.className = 'btn reason';
+      b.className = 'as-btn reason';
       b.value = code;
       b.textContent = label;
       return b;
@@ -445,23 +442,30 @@ export class UI {
     });
   }
 
+  // fiche d'adresse : page de la feuille, au petit cran, par-dessus l'onglet courant (retrouvé à la fermeture)
   openSheet(a) {
     this.map.selectAddress(a.id);
     this.sheetAddress = a;
     this._fillSheet(a);
     const sheet = $('sheet');
-    sheet.hidden = false;
-    const covered = this.map.container.clientHeight - sheet.offsetTop;  // offsetTop : hors animation d'entrée
-    this.map.ensureVisible(a.x, a.y, { bottom: covered });
+    if (sheet.hidden) this._sheetReturn = this.panel.view;
+    this.panel.show(sheet, 'peek');
+    this.updatePadding();
+    this.map.ensureVisible(a.x, a.y, { bottom: this.panel.covered() });
     for (const fn of this.sheetListeners) fn(a);
   }
 
-  closeSheet() {
-    const wasOpen = !$('sheet').hidden;
-    $('sheet').hidden = true;
+  // restore : revenir à l'onglet d'où la fiche a été ouverte (false : l'appelant affiche une autre vue)
+  closeSheet(restore = true) {
+    const sheet = $('sheet');
+    const wasOpen = !sheet.hidden;
     this.map.selectAddress(null);
     this.sheetAddress = null;
-    if (wasOpen) for (const fn of this.sheetListeners) fn(null);
+    if (!wasOpen) return;
+    if (restore && this._sheetReturn) this.panel.show(this._sheetReturn);
+    else sheet.hidden = true;
+    this._sheetReturn = null;
+    for (const fn of this.sheetListeners) fn(null);
   }
 
   // ---------------------------------------------------- toast, confirmation
@@ -508,10 +512,12 @@ export class UI {
     });
   }
 
-  confirm(message, okLabel = 'Confirmer') {
+  // destructive : action irréversible (bouton rouge, comme les alertes iOS)
+  confirm(message, okLabel = 'Confirmer', { destructive = false } = {}) {
     const dlg = $('confirm');
     $('confirm-msg').textContent = message;
     $('confirm-ok').textContent = okLabel;
+    $('confirm-ok').classList.toggle('destructive', destructive);
     dlg.returnValue = '';
     return new Promise((resolve) => {
       dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok'), { once: true });

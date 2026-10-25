@@ -1,7 +1,7 @@
-// Distribuer (branche facteur, phase L5) : anomalie et motif en deux touchers, reprise de la tournée dans
-// l'ordre de passage (carte « prochaine adresse »), anomalies dans les comptes, l'encart GPS et l'import.
+// Distribuer (branche facteur, phase L5 ; refonte) : anomalie et motif en deux touchers, prochaine adresse
+// toujours proposée dans l'ordre de passage, anomalies dans les comptes, la section « À proximité » et l'import.
 const { test, expect } = require('@playwright/test');
-const { ID, GPS, STREET, addressData, tourTotal, trackErrors, openApp, waitReady, tapAddress, statusOf } = require('./helpers');
+const { ID, GPS, STREET, addressData, tourTotal, trackErrors, openApp, waitReady, tapAddress, statusOf, openLegend, openPage } = require('./helpers');
 
 const reasonOf = (page, id) => page.evaluate((id) => window.neyronApp.store.reason(id), id);
 const visibleActions = (page) => page.evaluate(() => [...document.querySelectorAll('#sheet-actions .act')]
@@ -66,7 +66,7 @@ test('anomalie en deux touchers depuis le panneau : motif, changement de motif, 
   expect(errors).toEqual([]);
 });
 
-test('Reprendre : prochaine adresse dans l\'ordre de passage, la carte avance seule', async ({ page }) => {
+test('prochaine adresse toujours proposée dans l\'ordre de passage, elle avance seule', async ({ page }) => {
   const errors = trackErrors(page);
   await openApp(page);
   const molliet = streetAddrs('Chemin du Molliet');
@@ -80,13 +80,9 @@ test('Reprendre : prochaine adresse dans l\'ordre de passage, la carte avance se
   const card = page.locator('#next-card');
   const title = page.locator('#next-title');
   const settle = () => expect(card).not.toHaveClass(/busy/);  // fin de la protection contre le double toucher
-  await expect(page.locator('#btn-resume')).toBeVisible();
-  await expect(page.locator('#resume-next')).toHaveText(label(molliet[0]));
-  await page.click('#btn-resume');
-  await expect(card).toBeVisible();
-  await expect(page.locator('#btn-resume')).toBeHidden();
+  await expect(card).toBeVisible();  // aucun geste pour reprendre
   await expect(title).toHaveText(label(molliet[0]));
-  await expect(page.locator('#next-pos')).toHaveText(`Rue 1/2 · ${molliet.length} numéros restants`);
+  await expect(page.locator('#next-pos')).toHaveText(`Prochaine adresse · Rue 1/2 · ${molliet.length} numéros restants`);
   expect(await page.evaluate(() => window.neyronApp.map.selectedId)).toBe(molliet[0].id);
   const box = await page.locator('#next-done').boundingBox();
   expect(box.height).toBeGreaterThanOrEqual(56);  // gros bouton, à une main
@@ -122,7 +118,7 @@ test('Reprendre : prochaine adresse dans l\'ordre de passage, la carte avance se
   await expect(page.locator('#confirm-msg')).toContainText('L\'anomalie signalée est conservée');
   await page.click('#confirm-ok');
   await expect(title).toHaveText(label(barry[0]));
-  await expect(page.locator('#next-pos')).toHaveText(`Rue 2/2 · ${barry.length} numéros restants`);
+  await expect(page.locator('#next-pos')).toHaveText(`Prochaine adresse · Rue 2/2 · ${barry.length} numéros restants`);
   expect(await statusOf(page, molliet[1].id)).toBe('fait');
   expect(await statusOf(page, molliet[2].id)).toBe('anomalie');
   await settle();
@@ -136,22 +132,35 @@ test('Reprendre : prochaine adresse dans l\'ordre de passage, la carte avance se
   await expect(page.locator('#next-sub')).toHaveText(`${molliet.length - 1 + barry.length} adresses distribuées, 1 anomalie.`);
   await expect(page.locator('#next-body')).toBeHidden();
 
-  // reprise retrouvée après une relance ; fermer la carte
+  // retrouvée après une relance ; « Voir le bilan » mène à Contrôler
   await page.reload();
   await waitReady(page);
   await expect(title).toHaveText('Tournée terminée');
-  await page.click('#btn-next-close');
-  await expect(card).toBeHidden();
-  await expect(page.locator('#btn-resume')).toBeHidden();  // plus rien à reprendre
-  await page.reload();
-  await waitReady(page);
-  await expect(card).toBeHidden();
+  await page.click('#next-report');
+  expect(await page.evaluate(() => window.neyronApp.tabs.current)).toBe('control');
   expect(errors).toEqual([]);
 });
 
-test('reprise et panneau d\'adresse : la carte s\'efface pendant un pointage libre', async ({ page }) => {
+test('tournée commencée : le plan s\'ouvre sur la prochaine adresse', async ({ page }) => {
   await openApp(page);
-  await page.click('#btn-resume');
+  const first = await page.evaluate(() => window.neyronApp.distribute.current);
+  await page.evaluate((id) => window.neyronApp.store.setStatus([id], 'fait'), first.id);
+  await page.reload();
+  await waitReady(page);
+  const view = await page.evaluate(() => {
+    const { map, distribute } = window.neyronApp;
+    const a = distribute.current;
+    const [x, y] = map.toScreen(a.x, a.y);
+    const r = document.getElementById('panel').getBoundingClientRect();
+    return { k: map.k, x, y, panelTop: r.top, left: r.left, right: r.right, desktop: window.neyronApp.panel.desktop };
+  });
+  expect(view.k).toBeGreaterThanOrEqual(3);
+  if (view.desktop) expect(view.x).toBeGreaterThan(view.right);  // à droite du panneau latéral
+  else expect(view.y).toBeLessThan(view.panelTop);              // au-dessus de la feuille
+});
+
+test('fiche d\'adresse : la prochaine adresse s\'efface pendant un pointage libre', async ({ page }) => {
+  await openApp(page);
   const first = await page.locator('#next-title').textContent();
   await tapAddress(page, ID.gare28);  // pointage hors de l'ordre
   await expect(page.locator('#next-card')).toBeHidden();
@@ -173,7 +182,7 @@ test.describe('anomalies dans les comptes', () => {
       await store.setStatus([b], 'fait');
     }, { a: ID.gare28, b: ID.gare26 });
 
-    // encart GPS : l'anomalie est traitée, elle n'est plus proposée
+    // à proximité : l'anomalie est traitée, elle n'est plus proposée
     await page.click('#btn-locate');
     await expect(page.locator('#nearby-list .nb-row').first()).toBeVisible();
     const rows = await page.evaluate(() => [...document.querySelectorAll('#nearby-list .nb-row')].filter((r) => !r.hidden).map((r) => r.dataset.id));
@@ -186,14 +195,15 @@ test.describe('anomalies dans les comptes', () => {
     await expect(page.locator('#ctl-done')).toHaveText('1');
     await expect(page.locator('#ctl-anom')).toHaveText('1');
     await expect(page.locator('#ctl-todo')).toHaveText(String(tourTotal() - 2));
-    await expect(page.locator('#ctl-summary')).toHaveText(`2 / ${tourTotal()} adresses traitées · 1 %`);
+    await expect(page.locator('#ctl-summary')).toHaveText(`2 / ${tourTotal()} adresses traitées`);
+    await expect(page.locator('#ctl-pct')).toHaveText('1 %');
+    await openPage(page, 'control', '#ctl-streets-row');
     const gare = page.locator('#ctl-streets .vrow', { hasText: 'Rue de la Gare' });
     await expect(gare.locator('.vrow-count')).toHaveText('1/151');
     await expect(gare.locator('.vrow-sub')).toHaveText('13 restantes');
 
     // toute la rue distribuée : l'anomalie est conservée, la rue est traitée
-    await page.locator('#tabbar [data-tab="distribute"]').click();
-    if (await page.locator('#legend').isHidden()) await page.click('#btn-legend');
+    await openLegend(page);
     await page.click(`.lg-row[data-s="${STREET.gare}"] .lg-all`);
     await expect(page.locator('#confirm-msg')).toContainText('les 13 numéros restants de « Rue de la Gare » comme distribués');
     await expect(page.locator('#confirm-msg')).toContainText('L\'anomalie signalée est conservée');

@@ -2,7 +2,7 @@
 // progression propre à chaque tournée, renommer / archiver / restaurer, export et import.
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
-const { ID, STREET, addressData, total, tourTotal, trackErrors, openApp, waitReady, tapAddress, statusOf } = require('./helpers');
+const { ID, STREET, addressData, total, tourTotal, trackErrors, openApp, waitReady, tapAddress, statusOf, openLegend, openPage, setDetent } = require('./helpers');
 
 const tab = (page, name) => page.locator(`#tabbar [data-tab="${name}"]`);
 const activeTour = (page) => page.evaluate(() => {
@@ -11,20 +11,18 @@ const activeTour = (page) => page.evaluate(() => {
 });
 const streetRow = (page, i) => page.locator('#prep-streets .vrow').nth(i);
 
-// tap à la position d'une adresse, sans attendre le panneau (composition sur la carte)
-async function tapAt(page, id) {
-  const [x, y] = await page.evaluate((id) => {
-    const { map } = window.neyronApp;
-    const a = map.byId.get(id);
-    map._stopAnim();  // une animation en cours (recentrage) déplacerait la carte sous le doigt
-    map.setView(a.x, a.y, 3);
-    return map.toScreen(a.x, a.y);
-  }, id);
-  await page.mouse.click(x, y);
+// tap à la position d'une adresse, sans attendre la fiche (composition sur la carte)
+const tapAt = (page, id) => tapAddress(page, id, { sheet: false });
+
+// page principale de Préparer (onglet touché à nouveau), feuille au cran moyen
+async function prepareRoot(page) {
+  await tab(page, 'prepare').click();
+  if (await page.evaluate(() => window.neyronApp.tabs.current) === 'prepare') await tab(page, 'prepare').click();
+  await setDetent(page, 'medium');
 }
 
 async function newTour(page, name) {
-  await tab(page, 'prepare').click();
+  await openPage(page, 'prepare', '#prep-tour-row');
   await page.click('#btn-tour-new');
   await expect(page.locator('#prompt')).toHaveJSProperty('open', true);
   await expect(page.locator('#prompt-input')).toHaveValue(/^Tournée du \d\d\/\d\d$/);
@@ -33,16 +31,18 @@ async function newTour(page, name) {
   await expect(page.locator('#prep-tour-name')).toHaveText(name);
 }
 
-// éditeur de rue : côté, plage, puis Ajouter ou Retirer
+// éditeur de rue (page de la feuille) : côté, plage, puis Ajouter ou Retirer, et retour à la liste des rues
 async function editStreet(page, i, { side = 'all', from = '', to = '' } = {}, action = 'add') {
-  await tab(page, 'prepare').click();
+  await openPage(page, 'prepare', '#prep-streets-row');
   await streetRow(page, i).click();
-  await expect(page.locator('#street-editor')).toHaveJSProperty('open', true);
+  await expect(page.locator('#street-editor')).toBeVisible();
   await page.click(`#street-editor .seg input[value="${side}"] + span`);
   await page.locator('#se-from').fill(String(from));
   await page.locator('#se-to').fill(String(to));
   await page.click(action === 'add' ? '#se-add' : '#se-remove');
-  await expect(page.locator('#street-editor')).toHaveJSProperty('open', false);
+  await expect(page.locator('#toast-msg')).toContainText(action === 'add' ? 'ajouté' : 'retiré');
+  await page.click('#street-editor [data-back]');
+  await expect(page.locator('#prep-streets')).toBeVisible();
 }
 
 const streetAddrs = (i, { side = 'all', from = -Infinity, to = Infinity } = {}) => addressData().addresses
@@ -111,15 +111,15 @@ test('nouvelle tournée composée par rue : côté, plage, retrait', async ({ pa
   await expect(page.locator('#prep-summary')).toHaveText(/^Tournée vide/);
   await expect(page.locator('#total-progress')).toHaveText('0/0');
 
-  // carte : tout est hors tournée ; légende : message de tournée vide
+  // carte : tout est hors tournée ; rues de la tournée : message de tournée vide
   await tab(page, 'distribute').click();
   await expect(page.locator('#map text.num.out')).toHaveCount(total());
-  if (await page.locator('#legend').isHidden()) await page.click('#btn-legend');
+  await openLegend(page);
   await expect(page.locator('#legend-empty')).toHaveText('Tournée vide : composez-la dans l\'onglet Préparer.');
 
   // Rue de la Gare, côté pair
   const pairs = streetAddrs(STREET.gare, { side: 'pair' });
-  await tab(page, 'prepare').click();
+  await openPage(page, 'prepare', '#prep-streets-row');
   await streetRow(page, STREET.gare).click();
   await page.click('#street-editor .seg input[value="pair"] + span');
   await expect(page.locator('#se-preview')).toHaveText(`${pairs.length} numéros concernés · 0 déjà dans la tournée`);
@@ -152,7 +152,7 @@ test('progression propre à chaque tournée', async ({ page }) => {
   expect(await statusOf(page, ID.gare28)).toBe('fait');
 
   // la tournée « Neyron — 10 rues » contient aussi le 28 : à faire dans celle-là
-  await tab(page, 'prepare').click();
+  await openPage(page, 'prepare', '#prep-tour-row');
   await page.locator('#tour-list .tour-row', { hasText: 'Neyron — 10 rues' }).click();
   expect(await activeTour(page)).toMatchObject({ id: 'default' });
   expect(await statusOf(page, ID.gare28)).toBe('a_faire');
@@ -170,6 +170,7 @@ test('progression propre à chaque tournée', async ({ page }) => {
 test('renommer, archiver, restaurer', async ({ page }) => {
   await openApp(page);
   await newTour(page, 'Mardi');
+  await prepareRoot(page);
   await page.click('#btn-tour-rename');
   await page.locator('#prompt-input').fill('Mardi matin');
   await page.locator('#prompt-input').press('Enter');  // Entrée valide
@@ -181,11 +182,10 @@ test('renommer, archiver, restaurer', async ({ page }) => {
   await page.click('#confirm-ok');
   await expect(page.locator('#prep-tour-name')).toHaveText('Neyron — 10 rues');
   await expect(page.locator('#tour-list .tour-row')).toHaveCount(1);
+  await expect(page.locator('#btn-tour-archive')).toBeDisabled();  // dernière tournée en cours
+  await openPage(page, 'prepare', '#prep-tour-row');
   await expect(page.locator('#tour-archived')).toBeVisible();
   await expect(page.locator('#tour-archived-n')).toHaveText('1');
-  await expect(page.locator('#btn-tour-archive')).toBeDisabled();  // dernière tournée en cours
-
-  await page.click('#tour-archived summary');
   await page.locator('#tour-archived-list .tour-row').click();
   await expect(page.locator('#tour-list .tour-row')).toHaveCount(2);
   await expect(page.locator('#tour-archived')).toBeHidden();
@@ -195,10 +195,11 @@ test('composition sur la carte : un tap ajoute, un second retire', async ({ page
   const errors = trackErrors(page);
   await openApp(page);
   await newTour(page, 'Mardi');
+  await prepareRoot(page);
   await page.click('#btn-tour-select');
-  await expect(page.locator('#select-bar')).toBeVisible();
-  await expect(page.locator('#view-prepare')).toBeHidden();
-  await expect(page.locator('#btn-zoom-in')).toBeVisible();
+  await expect(page.locator('#select-bar')).toBeVisible();  // la feuille se réduit à une barre
+  await expect(page.locator('#prep-tour-row')).toBeHidden();
+  await expect(page.locator('#btn-fit')).toBeVisible();
   await expect(page.locator('#select-count')).toHaveText('Mardi : 0 adresse');
 
   await tapAt(page, ID.gare28);
@@ -234,6 +235,7 @@ test('export puis import : les tournées et leur composition suivent', async ({ 
     return store.updateTour(store.tour, { order: [ui.keys.key[s]], reverse: [ui.keys.key[s]] });
   }, STREET.gare);
   await page.evaluate(() => { navigator.canShare = () => false; });
+  await setDetent(page, 'medium');  // grand cran : les boutons de la carte sont recouverts
   await page.click('#btn-menu');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const file = testInfo.outputPath('backup.json');

@@ -3,7 +3,7 @@
 // cibles tactiles et noms accessibles dans toutes les vues.
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
-const { ID, GPS, STREET, addressData, tourIds, tourTotal, trackErrors, openApp, waitReady, tapAddress, statusOf } = require('./helpers');
+const { ID, GPS, STREET, addressData, tourIds, tourTotal, trackErrors, openApp, waitReady, tapAddress, statusOf, openLegend, openPage, setDetent } = require('./helpers');
 
 const tab = (page, name) => page.locator(`#tabbar [data-tab="${name}"]`);
 const num = (a) => `${a.n}${a.rep ? ` ${a.rep}` : ''}`;
@@ -32,21 +32,20 @@ test('parcours complet hors ligne : préparer un secteur, distribuer, contrôler
   await page.evaluate(() => { navigator.canShare = () => false; });
 
   // Préparer : secteur importé, puis Chemin du Barry placé en tête
-  await tab(page, 'prepare').click();
+  await openPage(page, 'prepare', '#prep-tour-row');
   await page.setInputFiles('#sector-file', { name: 'mardi.csv', mimeType: 'text/csv',
     buffer: Buffer.from('voie;début;fin;côté\nRue de la Gare;;;pairs\nChemin du Barry;;;\n') });
   await page.locator('#prompt-input').fill('Mardi');
   await page.click('#prompt-ok');
   await expect(page.locator('#prep-tour-name')).toHaveText('Mardi');
-  await page.click('#prep-order-box summary');
+  await openPage(page, 'prepare', '#prep-order-row');
   await page.click('[aria-label="Monter : Chemin du Barry"]');
   await expect(page.locator('#prep-order .order-row .vrow-name')).toHaveText(['1. Chemin du Barry', '2. Rue de la Gare']);
 
-  // Distribuer : reprise dans l'ordre de passage, une anomalie, puis toute la Rue de la Gare
+  // Distribuer : prochaine adresse dans l'ordre de passage, une anomalie, puis toute la Rue de la Gare
   const barry = streetAddrs('Chemin du Barry');
   const gare = streetAddrs('Rue de la Gare').filter((a) => a.side === 'pair');
   await tab(page, 'distribute').click();
-  await page.click('#btn-resume');
   const title = page.locator('#next-title');
   const settle = () => expect(page.locator('#next-card')).not.toHaveClass(/busy/);
   await expect(title).toHaveText(label(barry[0]));
@@ -78,7 +77,7 @@ test('parcours complet hors ligne : préparer un secteur, distribuer, contrôler
   await tab(page, 'control').click();
   await expect(page.locator('#ctl-title')).toHaveText('Bilan · Mardi');
   await expect(page.locator('#ctl-history-n')).toHaveText('1');
-  await page.click('#ctl-history summary');
+  await openPage(page, 'control', '#ctl-history');
   await expect(page.locator('#ctl-history-list .vrow-sub')).toHaveText(`${barry.length - 1 + gare.length} distribuées · 1 anomalie · 0 non traitée`);
   expect(errors).toEqual([]);
 });
@@ -163,6 +162,49 @@ test('sauvegardes de la v0.1 (format 1) acceptées, format futur refusé', async
   expect(errors).toEqual([]);
 });
 
+test('détail des passages clôturés effacé après 2 mois, bilans et passage en cours conservés', async ({ page }) => {
+  const errors = trackErrors(page);
+  await openApp(page);
+  const DAY = 86_400_000;
+  const now = Date.now();
+  const ev = (seq, days, id) => ({ dev: 'autre', seq, t: now - days * DAY, tour: 'default', ids: [id], st: 'fait', grp: `autre:${seq}` });
+  // passage A clôturé il y a 90 jours, passage B il y a 30 jours, passage en cours
+  const merged = await page.evaluate(async ({ events, now, DAY }) => {
+    const { store } = window.neyronApp;
+    const t = store.activeTour;
+    const closures = [
+      { at: now - 90 * DAY, start: 0, n: 229, done: 1, again: 0, todo: 228, anomalies: {} },
+      { at: now - 30 * DAY, start: now - 90 * DAY, n: 229, done: 1, again: 0, todo: 228, anomalies: {} },
+    ];
+    const r = await store.merge(events, [{ ...t, closures, updatedAt: now + 1 }]);
+    return { added: r.added, seqs: store.allEvents.map((e) => e.seq).sort() };
+  }, { events: [ev(1, 95, ID.gare28), ev(2, 50, ID.gare26), ev(3, 1, ID.gare21)], now, DAY });
+  expect(merged).toEqual({ added: 2, seqs: [2, 3] });  // le détail du passage A, rapporté par la sauvegarde, est effacé
+
+  await page.reload();
+  await waitReady(page);
+  expect(await page.evaluate(() => window.neyronApp.store.allEvents.map((e) => e.seq).sort())).toEqual([2, 3]);
+  expect(await statusOf(page, ID.gare21)).toBe('fait');
+
+  // 40 jours plus tard, le passage B est clôturé depuis plus de 2 mois à son tour
+  await page.evaluate(async ({ id, now, DAY }) => {
+    const { store } = window.neyronApp;
+    await store.setStatus([id], 'a_repasser');
+    await store.purge(now + 40 * DAY);
+  }, { id: ID.gare28, now, DAY });
+  await page.reload();
+  await waitReady(page);
+  const after = await page.evaluate(() => {
+    const { store } = window.neyronApp;
+    return { seqs: store.allEvents.filter((e) => e.dev === 'autre').map((e) => e.seq), closures: store.activeTour.closures.length,
+      canUndo: store.canUndo(), seq: store.seq };
+  });
+  expect(after).toEqual({ seqs: [3], closures: 2, canUndo: true, seq: 1 });
+  expect(await statusOf(page, ID.gare28)).toBe('a_repasser');
+  expect(await statusOf(page, ID.gare21)).toBe('fait');
+  expect(errors).toEqual([]);
+});
+
 test('écriture impossible (stockage plein) : un message, pas un échec silencieux', async ({ page }) => {
   await openApp(page);
   await page.evaluate(() => {
@@ -174,7 +216,7 @@ test('écriture impossible (stockage plein) : un message, pas un échec silencie
   await tapAddress(page, ID.gare28);
   await page.click('#sheet-actions [data-st="fait"]');
   await expect(page.locator('#toast-msg')).toHaveText('Enregistrement impossible : quota dépassé');
-  await tab(page, 'prepare').click();
+  await openPage(page, 'prepare', '#prep-tour-row');
   await page.click('#btn-tour-new');
   await page.click('#prompt-ok');
   await expect(page.locator('#toast-msg')).toHaveText('Enregistrement impossible : quota dépassé');
@@ -208,46 +250,44 @@ test.describe('ergonomie', () => {
       }
       return bad;
     });
-    const tapAt = async (id) => {
-      const [x, y] = await page.evaluate((id) => {
-        const { map } = window.neyronApp;
-        const a = map.byId.get(id);
-        map._stopAnim();
-        map.setView(a.x, a.y, 3);
-        return map.toScreen(a.x, a.y);
-      }, id);
-      await page.mouse.click(x, y);
-    };
+    const tapAt = (id) => tapAddress(page, id, { sheet: false });
 
+    expect(await audit(), 'Distribuer : carte, prochaine adresse').toEqual([]);
     await page.click('#btn-locate');
-    await expect(page.locator('#nearby-list .nb-row').first()).toBeVisible();
-    if (await page.locator('#legend').isHidden()) await page.click('#btn-legend');  // ouverte d'office sur grand écran
-    expect(await audit(), 'Distribuer : légende et encart GPS').toEqual([]);
-    await page.click('#btn-legend');  // refermée : elle couvre la carte sur téléphone
+    await expect(page.locator('#nearby-list .nb-row').first()).toBeAttached();
+    await openLegend(page);
+    expect(await audit(), 'Distribuer : à proximité, rues de la tournée').toEqual([]);
+    await setDetent(page, 'peek');
     await tapAt(ID.gare28);
     await expect(page.locator('#sheet')).toBeVisible();
-    expect(await audit(), 'panneau d\'adresse').toEqual([]);
+    expect(await audit(), 'fiche d\'adresse').toEqual([]);
     await page.click('#sheet-actions [data-st="anomalie"]');
     expect(await audit(), 'choix du motif').toEqual([]);
     await page.click('#reason-dialog button[value="cancel"]');
     await page.click('#btn-sheet-close');
     await page.click('#btn-locate');
     await page.click('#btn-locate');  // GPS arrêté
-    await page.click('#btn-resume');
-    expect(await audit(), 'reprise').toEqual([]);
     await page.click('#btn-menu');
     expect(await audit(), 'menu').toEqual([]);
     await page.click('#btn-menu');
 
-    await tab(page, 'prepare').click();
-    for (const s of ['#prep-order-box', '#prep-checks-box', '#prep-settings']) await page.click(`${s} summary`);
-    expect(await audit(), 'Préparer').toEqual([]);
+    await openPage(page, 'prepare', '#prep-tour-row');
+    expect(await audit(), 'Préparer : tournées').toEqual([]);
+    for (const row of ['#prep-order-row', '#prep-checks-row', '#prep-settings-row', '#prep-streets-row']) {
+      await openPage(page, 'prepare', row);
+      expect(await audit(), `Préparer : ${row}`).toEqual([]);
+    }
     await page.locator('#prep-streets .vrow').first().click();
     expect(await audit(), 'éditeur de rue').toEqual([]);
-    await page.click('#street-editor button[value="close"]');
+    await tab(page, 'prepare').click();
+    expect(await audit(), 'Préparer').toEqual([]);
 
     await tab(page, 'control').click();
-    for (const s of ['#ctl-anom-box', '#ctl-untreated-box']) await page.click(`${s} summary`);
+    await setDetent(page, 'large');
     expect(await audit(), 'Contrôler').toEqual([]);
+    for (const row of ['#ctl-anom-box', '#ctl-untreated-box', '#ctl-streets-row']) {
+      await openPage(page, 'control', row);
+      expect(await audit(), `Contrôler : ${row}`).toEqual([]);
+    }
   });
 });

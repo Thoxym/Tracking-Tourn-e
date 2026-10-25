@@ -7,8 +7,8 @@
   <meta name="referrer" content="no-referrer">
   <title>Tournées Neyron</title>
   <meta name="description" content="Plan des tournées de Neyron : pointage des numéros et position GPS, hors ligne.">
-  <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#14171c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -25,344 +25,452 @@
   <div id="app">
     <div id="map" aria-label="Plan de Neyron"></div>
 
-    <header class="topbar">
-      <button id="btn-legend" class="chip" type="button" aria-expanded="false" aria-controls="legend">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1.2"/><circle cx="4" cy="12" r="1.2"/><circle cx="4" cy="18" r="1.2"/></svg>
-        <span>Rues</span>
-        <span id="total-progress" class="pill">0</span>
-      </button>
-      <div class="spacer"></div>
-      <button id="btn-undo" class="iconbtn" type="button" aria-label="Annuler la dernière action" title="Annuler la dernière action" disabled>
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
-      </button>
-      <button id="btn-wake" class="iconbtn wake" type="button" aria-pressed="false" aria-label="Garder l'écran allumé" title="Garder l'écran allumé">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
-      </button>
-      <button id="btn-menu" class="iconbtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="menu" aria-label="Menu" title="Menu">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle class="fill" cx="12" cy="5" r="1.8"/><circle class="fill" cx="12" cy="12" r="1.8"/><circle class="fill" cx="12" cy="19" r="1.8"/></svg>
-      </button>
-    </header>
+    <!-- boutons posés sur la carte -->
+    <button id="btn-undo" class="fab glass" type="button" aria-label="Annuler la dernière action" title="Annuler la dernière action" disabled>
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+    </button>
+    <div id="scalebar" class="scalebar" aria-hidden="true"><span class="scalebar-bar"></span><span class="scalebar-label"></span></div>
 
-    <div id="menu" class="menu panel" role="menu" aria-label="Menu" hidden>
+    <div class="mapctl">
+      <div class="capsule glass">
+        <button id="btn-menu" class="cap-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="menu" aria-label="Menu" title="Menu">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle class="fill" cx="5.5" cy="12" r="1.9"/><circle class="fill" cx="12" cy="12" r="1.9"/><circle class="fill" cx="18.5" cy="12" r="1.9"/></svg>
+        </button>
+        <button id="btn-locate" class="cap-btn locate" type="button" data-mode="off" aria-pressed="false" aria-label="Localiser" title="Localiser">
+          <svg class="ico ico-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4L3.8 10.9l7 2.3 2.3 7z"/></svg>
+          <svg class="ico ico-on" viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M20 4L3.8 10.9l7 2.3 2.3 7z"/></svg>
+          <svg class="ico ico-follow" viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M12 2.8l7 17.4-7-3.9-7 3.9z"/></svg>
+        </button>
+        <button id="btn-wake" class="cap-btn wake" type="button" aria-pressed="false" aria-label="Garder l'écran allumé" title="Garder l'écran allumé">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
+        </button>
+      </div>
+      <button id="btn-fit" class="fab glass" type="button" aria-label="Voir toute la tournée" title="Voir toute la tournée">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>
+      </button>
+      <div class="capsule glass zoomctl">
+        <button id="btn-zoom-in" class="cap-btn" type="button" aria-label="Zoomer" title="Zoomer">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button id="btn-zoom-out" class="cap-btn" type="button" aria-label="Dézoomer" title="Dézoomer">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="menu" class="menu glass" role="menu" aria-label="Menu" hidden>
       <button id="btn-export" class="menu-item" type="button" role="menuitem">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Exporter la progression
+        <span>Sauvegarder la progression</span>
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14.5V3.5M8 7.5l4-4 4 4"/><path d="M8.5 10.5H7A1.5 1.5 0 0 0 5.5 12v7A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5v-7a1.5 1.5 0 0 0-1.5-1.5h-1.5"/></svg>
       </button>
       <label id="btn-import" class="menu-item" for="import-file" role="menuitem" tabindex="0">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Importer une sauvegarde
+        <span>Importer une sauvegarde</span>
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11M8 10.5l4 4 4-4"/><path d="M8.5 10.5H7A1.5 1.5 0 0 0 5.5 12v7A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5v-7a1.5 1.5 0 0 0-1.5-1.5h-1.5"/></svg>
       </label>
       <button id="btn-theme" class="menu-item" type="button" role="menuitem">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path class="fill" d="M12 4a8 8 0 0 1 0 16z"/></svg><span>Thème : <span id="theme-label">automatique</span></span>
+        <span>Thème : <span id="theme-label">automatique</span></span>
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path class="fill" d="M12 4a8 8 0 0 1 0 16z"/></svg>
       </button>
+      <p class="menu-note">La sauvegarde contient tout l'historique horodaté des pointages, pour passer à un autre téléphone : gardez-la pour vous, ce n'est pas un rapport.</p>
       <p id="menu-version" class="menu-foot"></p>
     </div>
     <input id="import-file" class="vh" type="file" accept=".json,application/json" tabindex="-1" aria-hidden="true">
 
-    <aside id="legend" class="legend panel" hidden aria-label="Rues de la tournée">
-      <div class="legend-head">
-        <h2>Rues de la tournée</h2>
-        <button id="btn-legend-close" class="iconbtn flat" type="button" aria-label="Fermer la légende">
-          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
-      </div>
-      <div class="search-box"><input id="legend-search" class="search" type="search" placeholder="Rechercher une rue" autocomplete="off" enterkeyhint="search" aria-label="Rechercher une rue"></div>
-      <ul id="legend-list" class="legend-list"></ul>
-      <p id="legend-empty" class="list-empty" hidden>Aucune rue ne correspond.</p>
-      <p class="legend-hint">Case : afficher / masquer · Nom : zoomer sur la rue · ✓✓ : toute la rue distribuée</p>
-    </aside>
+    <!-- feuille à crans : contenu de l'onglet courant, ou fiche d'adresse -->
+    <section id="panel" class="panel glass" data-detent="peek" aria-label="Tournée">
+      <div class="grabber" aria-hidden="true"><span></span></div>
 
-    <div class="mapctl">
-      <button id="btn-locate" class="iconbtn locate" type="button" data-mode="off" aria-pressed="false" aria-label="Localiser" title="Localiser">
-        <svg class="ico ico-off" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
-        <svg class="ico ico-on" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle class="fill" cx="12" cy="12" r="3.2"/></svg>
-        <svg class="ico ico-follow" viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M12 2.5l7.5 18.5-7.5-4.2-7.5 4.2z"/></svg>
-      </button>
-      <button id="btn-zoom-in" class="iconbtn" type="button" aria-label="Zoomer">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-      </button>
-      <button id="btn-zoom-out" class="iconbtn" type="button" aria-label="Dézoomer">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
-      </button>
-      <button id="btn-fit" class="iconbtn" type="button" aria-label="Voir tout le plan">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>
-      </button>
-    </div>
-
-    <div id="dock" class="dock">
-      <button id="btn-resume" class="resume" type="button" hidden>
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path class="fill" d="M10 8.2v7.6l6-3.8z"/></svg>
-        <span class="resume-text"><strong>Reprendre</strong><span id="resume-next"></span></span>
-      </button>
-      <section id="nearby" class="nearby panel" hidden aria-label="Adresses non traitées les plus proches">
-        <div class="nearby-head"><span id="gps-indicator" class="gps-ind"></span><span id="gps-status">Recherche du signal GPS…</span></div>
-        <ol id="nearby-list" class="nearby-list"></ol>
-      </section>
-      <section id="next-card" class="next panel" hidden aria-label="Prochaine adresse" aria-live="polite">
-        <div class="next-head">
-          <div class="next-main">
-            <p id="next-pos" class="next-pos"></p>
-            <h2 id="next-title"></h2>
-            <p id="next-sub" class="muted"></p>
-          </div>
-          <button id="btn-next-close" class="iconbtn flat" type="button" aria-label="Quitter la reprise" title="Quitter la reprise">
-            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-          </button>
-        </div>
-        <div id="next-body">
-          <div class="next-actions">
-            <button id="next-anomaly" class="act act-anomalie" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8L2.8 19.8h18.4z"/><path d="M12 9.8v4.6M12 16.9v.4"/></svg>Anomalie</button>
-            <button id="next-done" class="act act-fait" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Distribué</button>
-          </div>
-          <div class="next-more">
-            <button id="next-later" class="btn" type="button">À repasser</button>
-            <button id="next-street" class="btn" type="button">Toute la rue</button>
-          </div>
-        </div>
-        <div id="next-end" hidden>
-          <button id="next-report" class="btn primary wide" type="button">Voir le bilan</button>
-        </div>
-      </section>
-    </div>
-
-    <div id="scalebar" class="scalebar" aria-hidden="true"><span class="scalebar-bar"></span><span class="scalebar-label"></span></div>
-
-    <section id="sheet" class="sheet panel" hidden aria-live="polite">
-      <div class="sheet-head">
-        <div>
-          <h2 id="sheet-title"></h2>
-          <p class="muted"><span id="sheet-status" class="badge"></span> <span id="sheet-sub"></span></p>
-        </div>
-        <button id="btn-sheet-close" class="iconbtn flat" type="button" aria-label="Fermer">
-          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
-      </div>
-      <div id="sheet-actions" class="sheet-actions">
-        <button class="act act-fait" type="button" data-st="fait">
-          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Distribué
-        </button>
-        <button class="act act-anomalie" type="button" data-st="anomalie">
-          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8L2.8 19.8h18.4z"/><path d="M12 9.8v4.6M12 16.9v.4"/></svg>Anomalie
-        </button>
-        <button class="act act-a_repasser" type="button" data-st="a_repasser">
-          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>À repasser
-        </button>
-        <button class="act act-a_faire" type="button" data-st="a_faire">
-          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>Remettre à faire
-        </button>
-      </div>
-    </section>
-
-    <section id="view-prepare" class="view" hidden aria-label="Préparer la tournée">
-      <div class="view-body">
-        <div class="view-sec">
-          <h3>Tournées</h3>
-          <ul id="tour-list" class="vlist vlist-top"></ul>
-          <div class="btn-row">
-            <button id="btn-tour-new" class="btn" type="button">
-              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nouvelle tournée
-            </button>
-            <label id="btn-sector" class="btn" for="sector-file" tabindex="0" role="button">
-              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Importer un secteur
-            </label>
-          </div>
-          <input id="sector-file" class="vh" type="file" accept=".csv,text/csv,text/plain" tabindex="-1" aria-hidden="true">
-          <details class="fold-help">
-            <summary>Format du secteur (CSV)</summary>
-            <p class="view-note">Une ligne par tronçon : <code>voie;début;fin;côté</code>. Début, fin et côté (tous, pairs, impairs) sont facultatifs ; début plus grand que fin = numéros décroissants. L'ordre des lignes donne l'ordre de passage. Exemple : <code>Route de Genève;193;58;pairs</code></p>
-          </details>
-          <details id="tour-archived" class="archived" hidden>
-            <summary>Tournées archivées (<span id="tour-archived-n">0</span>)</summary>
-            <ul id="tour-archived-list" class="vlist"></ul>
-          </details>
-        </div>
-        <div class="view-sec">
-          <h2 id="prep-tour-name"></h2>
-          <p id="prep-summary" class="muted"></p>
-          <p id="prep-load" class="load">
-            <span class="load-item"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18c3-1 4-4 6-7s4-5 10-5"/><circle class="fill" cx="4" cy="18" r="1.6"/><circle class="fill" cx="20" cy="6" r="1.6"/></svg><span class="vh">Distance : </span><span id="prep-load-dist"></span></span>
-            <span class="load-item"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg><span class="vh">Durée estimée : </span><span id="prep-load-time"></span></span>
-          </p>
-          <div class="btn-row">
-            <button id="btn-tour-select" class="btn primary" type="button">
-              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>Choisir sur la carte
-            </button>
-            <button id="btn-tour-rename" class="btn" type="button">Renommer</button>
-            <button id="btn-tour-archive" class="btn" type="button">Archiver</button>
-          </div>
-          <details id="prep-settings" class="fold-help">
-            <summary>Réglages de l'estimation</summary>
-            <div class="settings">
-              <label for="set-sec">Temps par adresse</label>
-              <span class="unit"><input id="set-sec" class="search num-input" type="text" inputmode="numeric" maxlength="3" autocomplete="off"> s</span>
-              <label for="set-kmh">Vitesse de marche</label>
-              <span class="unit"><input id="set-kmh" class="search num-input" type="text" inputmode="decimal" maxlength="4" autocomplete="off"> km/h</span>
+      <!-- ============================================================ Distribuer -->
+      <div id="view-distribute" class="view" data-tab="distribute">
+        <div class="page" data-page="root">
+          <header class="nav">
+            <div class="nav-titles">
+              <h1 id="dist-title" class="nav-title">Tournée</h1>
+              <p class="nav-sub"><span id="total-progress" class="num-pill">0</span> adresses traitées</p>
             </div>
-            <p class="view-note">Distance : chaque rue d'une adresse à l'autre, plus les liaisons à vol d'oiseau entre deux rues, dans l'ordre de passage. Durée : temps par adresse et marche. Réglages propres à cet appareil.</p>
-          </details>
-        </div>
-        <details id="prep-order-box" class="view-sec fold">
-          <summary><h3>Ordre de passage</h3><span id="prep-order-n" class="fold-n"></span></summary>
-          <ol id="prep-order" class="vlist order-list"></ol>
-          <button id="btn-order-reset" class="btn wide" type="button">Ordre alphabétique</button>
-        </details>
-        <details id="prep-checks-box" class="view-sec fold">
-          <summary><h3>Vérifications</h3><span id="prep-checks-n" class="fold-n"></span></summary>
-          <div id="prep-checks"></div>
-        </details>
-        <div class="view-sec">
-          <h3>Rues de la commune</h3>
-          <input id="prep-search" class="search" type="search" placeholder="Rechercher une rue" autocomplete="off" enterkeyhint="search" aria-label="Rechercher une rue">
-          <ul id="prep-streets" class="vlist"></ul>
-          <p id="prep-empty" class="list-empty" hidden>Aucune rue ne correspond.</p>
-        </div>
-      </div>
-    </section>
+          </header>
+          <div class="page-body">
+            <section id="next-card" class="next" data-peek aria-label="Prochaine adresse" aria-live="polite">
+              <p id="next-pos" class="caption"></p>
+              <h2 id="next-title" class="next-title"></h2>
+              <p id="next-sub" class="sub"></p>
+              <div id="next-body">
+                <div class="next-actions">
+                  <button id="next-anomaly" class="act act-anomalie" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2L3 19.5h18z"/><path d="M12 10v4.4M12 16.9v.3"/></svg>Anomalie</button>
+                  <button id="next-done" class="act act-fait" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Distribué</button>
+                </div>
+                <div class="next-more">
+                  <button id="next-later" class="btn tinted" type="button">À repasser</button>
+                  <button id="next-street" class="btn tinted" type="button">Toute la rue</button>
+                </div>
+              </div>
+              <div id="next-end" hidden>
+                <button id="next-report" class="btn filled wide" type="button">Voir le bilan</button>
+              </div>
+            </section>
 
-    <div id="select-bar" class="select-bar panel" hidden role="status">
-      <div class="select-text">
-        <strong id="select-count"></strong>
-        <span class="muted">Touchez un numéro pour l'ajouter ou le retirer</span>
-      </div>
-      <button id="btn-select-done" class="btn primary" type="button">Terminer</button>
-    </div>
+            <section id="nearby" class="sec" hidden aria-label="Adresses non traitées les plus proches">
+              <h3 class="sec-head">À proximité</h3>
+              <div class="group">
+                <div class="gps-line"><span id="gps-indicator" class="gps-ind"></span><span id="gps-status">Recherche du signal GPS…</span></div>
+                <ol id="nearby-list" class="rows"></ol>
+              </div>
+            </section>
 
-    <dialog id="street-editor" class="dialog panel">
-      <form method="dialog">
-        <h2 id="se-title"></h2>
-        <p id="se-sub" class="muted"></p>
-        <fieldset class="seg">
-          <legend class="vh">Côté</legend>
-          <label><input type="radio" name="se-side" value="all" checked><span>Tous</span></label>
-          <label><input type="radio" name="se-side" value="pair"><span>Pairs</span></label>
-          <label><input type="radio" name="se-side" value="impair"><span>Impairs</span></label>
-        </fieldset>
-        <div class="range">
-          <label>Du n° <input id="se-from" class="search" type="number" inputmode="numeric" min="0" placeholder="début"></label>
-          <label>au n° <input id="se-to" class="search" type="number" inputmode="numeric" min="0" placeholder="fin"></label>
-        </div>
-        <p id="se-preview" class="se-preview"></p>
-        <div class="dialog-actions">
-          <button id="se-remove" class="btn" type="button">Retirer</button>
-          <button id="se-add" class="btn primary" type="button">Ajouter</button>
-        </div>
-        <div class="dialog-actions">
-          <button id="se-map" class="btn" type="button">Voir sur la carte</button>
-          <button class="btn" type="submit" value="close">Fermer</button>
-        </div>
-      </form>
-    </dialog>
-
-    <section id="view-control" class="view" hidden aria-label="Contrôler la tournée">
-      <div class="view-body">
-        <div class="view-sec">
-          <h2 id="ctl-title">Bilan de la tournée</h2>
-          <p id="ctl-passage" class="muted"></p>
-          <div class="stats">
-            <div class="stat stat-done"><span id="ctl-done" class="stat-n">0</span><span class="stat-l">distribuées</span></div>
-            <div class="stat"><span id="ctl-todo" class="stat-n">0</span><span class="stat-l">restantes</span></div>
-            <div class="stat stat-again"><span id="ctl-again" class="stat-n">0</span><span class="stat-l">à repasser</span></div>
-            <div class="stat stat-anom"><span id="ctl-anom" class="stat-n">0</span><span class="stat-l">anomalies</span></div>
+            <section id="legend" class="sec" aria-label="Rues de la tournée">
+              <h3 class="sec-head">Rues de la tournée</h3>
+              <div class="search-field"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg><input id="legend-search" class="search" type="search" placeholder="Rechercher une rue" autocomplete="off" enterkeyhint="search" aria-label="Rechercher une rue"></div>
+              <ul id="legend-list" class="group legend-list"></ul>
+              <p id="legend-empty" class="foot" hidden>Aucune rue ne correspond.</p>
+              <p class="foot">Pastille : afficher ou masquer la rue · Nom : la voir sur le plan · ✓✓ : toute la rue distribuée.</p>
+            </section>
           </div>
-          <div class="progress"><span id="ctl-bar"></span></div>
-          <p id="ctl-summary" class="muted"></p>
-          <p id="ctl-left" class="muted"></p>
         </div>
-        <div class="view-sec">
-          <h3>Par rue</h3>
-          <ul id="ctl-streets" class="vlist"></ul>
-          <p id="ctl-empty" class="list-empty" hidden>Tournée vide : composez-la dans l'onglet Préparer.</p>
+      </div>
+
+      <!-- ============================================================ Préparer -->
+      <div id="view-prepare" class="view" data-tab="prepare" hidden>
+        <div class="page" data-page="root">
+          <header class="nav"><div class="nav-titles"><h1 class="nav-title">Préparer</h1></div></header>
+          <div class="page-body">
+            <div class="group" data-peek>
+              <button id="prep-tour-row" class="row nav-row" type="button" data-push="tours">
+                <span class="row-main"><span id="prep-tour-name" class="row-title"></span><span id="prep-summary" class="row-sub"></span></span>
+                <span class="row-value">Changer</span>
+                <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>
+              </button>
+              <div id="prep-load" class="tiles tiles-2">
+                <div class="tile"><span class="tile-l">Distance</span><span id="prep-load-dist" class="tile-n"></span></div>
+                <div class="tile"><span class="tile-l">Durée estimée</span><span id="prep-load-time" class="tile-n"></span></div>
+              </div>
+            </div>
+            <div class="group">
+              <button id="btn-tour-select" class="row" type="button">
+                <span class="row-icon bg-blue"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg></span>
+                <span class="row-main"><span class="row-title">Choisir sur la carte</span></span>
+              </button>
+              <button id="prep-streets-row" class="row nav-row" type="button" data-push="streets">
+                <span class="row-icon bg-indigo"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle class="fill" cx="4" cy="6" r="1.3"/><circle class="fill" cx="4" cy="12" r="1.3"/><circle class="fill" cx="4" cy="18" r="1.3"/></svg></span>
+                <span class="row-main"><span class="row-title">Rues de la commune</span></span>
+                <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>
+              </button>
+              <button id="prep-order-row" class="row nav-row" type="button" data-push="order">
+                <span class="row-icon bg-teal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M3.5 16.5L7 20l3.5-3.5"/><path d="M17 20V4M13.5 7.5L17 4l3.5 3.5"/></svg></span>
+                <span class="row-main"><span class="row-title">Ordre de passage</span></span>
+                <span id="prep-order-n" class="row-value"></span>
+                <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>
+              </button>
+              <button id="prep-checks-row" class="row nav-row" type="button" data-push="checks">
+                <span class="row-icon bg-orange"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+                <span class="row-main"><span class="row-title">Vérifications</span></span>
+                <span id="prep-checks-n" class="row-value"></span>
+                <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>
+              </button>
+              <button id="prep-settings-row" class="row nav-row" type="button" data-push="settings">
+                <span class="row-icon bg-gray"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg></span>
+                <span class="row-main"><span class="row-title">Réglages de l'estimation</span></span>
+                <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+            <div class="group">
+              <button id="btn-tour-rename" class="row" type="button"><span class="row-main"><span class="row-title tint">Renommer la tournée</span></span></button>
+              <button id="btn-tour-archive" class="row" type="button"><span class="row-main"><span class="row-title danger">Archiver la tournée</span></span></button>
+            </div>
+          </div>
         </div>
-        <details id="ctl-anom-box" class="view-sec fold">
-          <summary><h3>Anomalies</h3><span id="ctl-anom-n" class="fold-n"></span></summary>
-          <ul id="ctl-reasons" class="rbars"></ul>
-          <ul id="ctl-anom-list" class="vlist"></ul>
-          <p id="ctl-anom-none" class="check-none">Aucune anomalie signalée dans ce passage.</p>
-        </details>
-        <details id="ctl-untreated-box" class="view-sec fold">
-          <summary><h3>Non traitées</h3><span id="ctl-untreated-n" class="fold-n"></span></summary>
-          <ul id="ctl-untreated-list" class="vlist"></ul>
-          <p id="ctl-untreated-none" class="check-none">Toutes les adresses de la tournée sont traitées.</p>
-        </details>
-        <div class="view-sec">
-          <h3>Rapport</h3>
-          <p class="view-note">Une ligne par adresse de la tournée : rue, numéro, côté, statut, motif d'anomalie. Sans heure, sauf si vous cochez la case.</p>
-          <label class="check"><input id="ctl-hours" type="checkbox"> Inclure les heures de pointage</label>
-          <div class="btn-row">
-            <button id="ctl-csv" class="btn primary" type="button">
-              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Rapport CSV
+
+        <div class="page" data-page="tours" hidden>
+          <header class="nav"><button class="nav-back" type="button" data-back>Préparer</button><h1 class="nav-title small">Tournées</h1></header>
+          <div class="page-body">
+            <ul id="tour-list" class="group"></ul>
+            <div class="group">
+              <button id="btn-tour-new" class="row" type="button">
+                <span class="row-icon bg-blue"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+                <span class="row-main"><span class="row-title">Nouvelle tournée</span></span>
+              </button>
+              <label id="btn-sector" class="row" for="sector-file" tabindex="0" role="button">
+                <span class="row-icon bg-green"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11M8 10.5l4 4 4-4"/><path d="M8.5 10.5H7A1.5 1.5 0 0 0 5.5 12v7A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5v-7a1.5 1.5 0 0 0-1.5-1.5h-1.5"/></svg></span>
+                <span class="row-main"><span class="row-title">Importer un secteur</span></span>
+              </label>
+            </div>
+            <input id="sector-file" class="vh" type="file" accept=".csv,text/csv,text/plain" tabindex="-1" aria-hidden="true">
+            <p class="foot">Secteur : un fichier CSV, une ligne par tronçon <code>voie;début;fin;côté</code>. Début, fin et côté (tous, pairs, impairs) sont facultatifs ; début plus grand que fin = numéros décroissants. L'ordre des lignes donne l'ordre de passage. Exemple : <code>Route de Genève;193;58;pairs</code></p>
+            <section id="tour-archived" class="sec" hidden>
+              <h3 class="sec-head">Archivées (<span id="tour-archived-n">0</span>)</h3>
+              <ul id="tour-archived-list" class="group"></ul>
+              <p class="foot">Touchez une tournée archivée pour la restaurer, avec sa progression.</p>
+            </section>
+          </div>
+        </div>
+
+        <div class="page" data-page="order" hidden>
+          <header class="nav"><button class="nav-back" type="button" data-back>Préparer</button><h1 class="nav-title small">Ordre de passage</h1></header>
+          <div class="page-body">
+            <ol id="prep-order" class="group order-list"></ol>
+            <div class="group">
+              <button id="btn-order-reset" class="row" type="button"><span class="row-main"><span class="row-title tint">Remettre l'ordre alphabétique</span></span></button>
+            </div>
+            <p class="foot">Les flèches changent l'ordre des rues ; ⇅ parcourt la rue en numéros décroissants.</p>
+          </div>
+        </div>
+
+        <div class="page" data-page="checks" hidden>
+          <header class="nav"><button class="nav-back" type="button" data-back>Préparer</button><h1 class="nav-title small">Vérifications</h1></header>
+          <div id="prep-checks" class="page-body"></div>
+        </div>
+
+        <div class="page" data-page="streets" hidden>
+          <header class="nav"><button class="nav-back" type="button" data-back>Préparer</button><h1 class="nav-title small">Rues de la commune</h1></header>
+          <div class="page-body">
+            <div class="search-field"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg><input id="prep-search" class="search" type="search" placeholder="Rechercher une rue" autocomplete="off" enterkeyhint="search" aria-label="Rechercher une rue"></div>
+            <ul id="prep-streets" class="group"></ul>
+            <p id="prep-empty" class="foot" hidden>Aucune rue ne correspond.</p>
+          </div>
+        </div>
+
+        <div id="street-editor" class="page" data-page="street" hidden>
+          <header class="nav"><button class="nav-back" type="button" data-back>Rues</button><h1 id="se-title" class="nav-title small"></h1></header>
+          <div class="page-body">
+            <p id="se-sub" class="foot first"></p>
+            <fieldset class="seg">
+              <legend class="vh">Côté</legend>
+              <label><input type="radio" name="se-side" value="all" checked><span>Tous</span></label>
+              <label><input type="radio" name="se-side" value="pair"><span>Pairs</span></label>
+              <label><input type="radio" name="se-side" value="impair"><span>Impairs</span></label>
+            </fieldset>
+            <div class="group">
+              <label class="row field-row">Du n°<input id="se-from" class="field" type="number" inputmode="numeric" min="0" placeholder="début"></label>
+              <label class="row field-row">Au n°<input id="se-to" class="field" type="number" inputmode="numeric" min="0" placeholder="fin"></label>
+            </div>
+            <p id="se-preview" class="foot"></p>
+            <div class="btn-pair">
+              <button id="se-remove" class="btn tinted danger-tint" type="button">Retirer</button>
+              <button id="se-add" class="btn filled" type="button">Ajouter</button>
+            </div>
+            <div class="group">
+              <button id="se-map" class="row" type="button"><span class="row-main"><span class="row-title tint">Voir la rue sur le plan</span></span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="page" data-page="settings" hidden>
+          <header class="nav"><button class="nav-back" type="button" data-back>Préparer</button><h1 class="nav-title small">Estimation</h1></header>
+          <div class="page-body">
+            <div id="prep-settings" class="group">
+              <label class="row field-row" for="set-sec">Temps par adresse<span class="unit"><input id="set-sec" class="field num-input" type="text" inputmode="numeric" maxlength="3" autocomplete="off"> s</span></label>
+              <label class="row field-row" for="set-kmh">Vitesse de marche<span class="unit"><input id="set-kmh" class="field num-input" type="text" inputmode="decimal" maxlength="4" autocomplete="off"> km/h</span></label>
+            </div>
+            <p class="foot">Distance : chaque rue d'une adresse à l'autre, plus les liaisons à vol d'oiseau entre deux rues, dans l'ordre de passage. Durée : temps par adresse et marche. Réglages propres à cet appareil.</p>
+          </div>
+        </div>
+
+        <div id="select-bar" class="page" data-page="select" hidden role="status">
+          <div class="page-body">
+            <div class="select-row" data-peek>
+              <div class="select-text">
+                <strong id="select-count"></strong>
+                <span class="sub">Touchez un numéro pour l'ajouter ou le retirer</span>
+              </div>
+              <button id="btn-select-done" class="btn filled" type="button">Terminer</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================ Contrôler -->
+      <div id="view-control" class="view" data-tab="control" hidden>
+        <div class="page" data-page="root">
+          <header class="nav">
+            <div class="nav-titles">
+              <h1 id="ctl-title" class="nav-title">Bilan</h1>
+              <p id="ctl-passage" class="nav-sub"></p>
+            </div>
+          </header>
+          <div class="page-body">
+            <div class="summary" data-peek>
+              <div class="ring-box">
+                <svg class="ring" viewBox="0 0 64 64" aria-hidden="true"><circle class="ring-track" cx="32" cy="32" r="27"/><circle id="ctl-ring" class="ring-fill" cx="32" cy="32" r="27"/></svg>
+                <span id="ctl-pct" class="ring-pct">0 %</span>
+              </div>
+              <div class="summary-text">
+                <p id="ctl-summary" class="summary-main"></p>
+                <p id="ctl-left" class="sub"></p>
+              </div>
+            </div>
+            <div class="tiles tiles-4">
+              <button class="tile stat-done" type="button" data-push="streets"><span id="ctl-done" class="tile-n">0</span><span class="tile-l">distribuées</span></button>
+              <button class="tile" type="button" data-push="untreated"><span id="ctl-todo" class="tile-n">0</span><span class="tile-l">restantes</span></button>
+              <button class="tile stat-again" type="button" data-push="untreated"><span id="ctl-again" class="tile-n">0</span><span class="tile-l">à repasser</span></button>
+              <button class="tile stat-anom" type="button" data-push="anomalies"><span id="ctl-anom" class="tile-n">0</span><span class="tile-l">anomalies</span></button>
+            </div>
+            <div class="group">
+              <button id="ctl-streets-row" class="row nav-row" type="button" data-push="streets">
+                <span class="row-main"><span class="row-title">Par rue</span></span>
+                <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>
+              </button>
+              <button id="ctl-anom-box" class="row nav-row" type="button" data-push="anomalies">
+                <span class="row-main"><span class="row-title">Anomalies</span></span>
+                <span id="ctl-anom-n" class="row-value"></span>
+                <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>
+              </button>
+              <button id="ctl-untreated-box" class="row nav-row" type="button" data-push="untreated">
+                <span class="row-main"><span class="row-title">Non traitées</span></span>
+                <span id="ctl-untreated-n" class="row-value"></span>
+                <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>
+              </button>
+              <button id="ctl-history" class="row nav-row" type="button" data-push="history" hidden>
+                <span class="row-main"><span class="row-title">Passages clôturés</span></span>
+                <span id="ctl-history-n" class="row-value">0</span>
+                <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+            <section class="sec">
+              <h3 class="sec-head">Rapport</h3>
+              <div class="group">
+                <label class="row switch-row" for="ctl-hours"><span class="row-main"><span class="row-title">Inclure les heures</span></span><input id="ctl-hours" class="switch" type="checkbox" role="switch"></label>
+                <button id="ctl-csv" class="row" type="button">
+                  <span class="row-main"><span class="row-title tint">Partager le rapport CSV</span></span>
+                  <svg class="ico tint" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14.5V3.5M8 7.5l4-4 4 4"/><path d="M8.5 10.5H7A1.5 1.5 0 0 0 5.5 12v7A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5v-7a1.5 1.5 0 0 0-1.5-1.5h-1.5"/></svg>
+                </button>
+                <button id="ctl-json" class="row" type="button">
+                  <span class="row-main"><span class="row-title tint">Partager le rapport JSON</span></span>
+                  <svg class="ico tint" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14.5V3.5M8 7.5l4-4 4 4"/><path d="M8.5 10.5H7A1.5 1.5 0 0 0 5.5 12v7A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5v-7a1.5 1.5 0 0 0-1.5-1.5h-1.5"/></svg>
+                </button>
+              </div>
+              <p class="foot">Une ligne par adresse : rue, numéro, côté, statut, motif d'anomalie. Les heures de pointage n'y figurent que si vous les incluez.</p>
+            </section>
+            <div class="group">
+              <button id="ctl-close" class="row" type="button"><span class="row-main"><span class="row-title danger">Clôturer le passage</span></span></button>
+            </div>
+            <p class="foot">Le bilan est gardé dans l'historique et la tournée repart à zéro. Le détail des pointages d'un passage clôturé est effacé au bout de 2 mois.</p>
+          </div>
+        </div>
+
+        <div class="page" data-page="streets" hidden>
+          <header class="nav"><button class="nav-back" type="button" data-back>Bilan</button><h1 class="nav-title small">Par rue</h1></header>
+          <div class="page-body">
+            <ul id="ctl-streets" class="group"></ul>
+            <p id="ctl-empty" class="foot" hidden>Tournée vide : composez-la dans l'onglet Préparer.</p>
+          </div>
+        </div>
+
+        <div class="page" data-page="anomalies" hidden>
+          <header class="nav"><button class="nav-back" type="button" data-back>Bilan</button><h1 class="nav-title small">Anomalies</h1></header>
+          <div class="page-body">
+            <ul id="ctl-reasons" class="group rbars"></ul>
+            <ul id="ctl-anom-list" class="group"></ul>
+            <p id="ctl-anom-none" class="foot">Aucune anomalie signalée dans ce passage.</p>
+          </div>
+        </div>
+
+        <div class="page" data-page="untreated" hidden>
+          <header class="nav"><button class="nav-back" type="button" data-back>Bilan</button><h1 class="nav-title small">Non traitées</h1></header>
+          <div class="page-body">
+            <ul id="ctl-untreated-list" class="group"></ul>
+            <p id="ctl-untreated-none" class="foot">Toutes les adresses de la tournée sont traitées.</p>
+          </div>
+        </div>
+
+        <div class="page" data-page="history" hidden>
+          <header class="nav"><button class="nav-back" type="button" data-back>Bilan</button><h1 class="nav-title small">Passages clôturés</h1></header>
+          <div class="page-body">
+            <ul id="ctl-history-list" class="group"></ul>
+            <p class="foot">Bilan de chaque passage, sans détail par adresse. Le dernier passage peut être rouvert tant que rien n'a été pointé depuis.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================ fiche d'adresse -->
+      <div id="sheet" class="view addr" hidden aria-live="polite">
+        <div class="page" data-page="root">
+          <header class="nav">
+            <div class="nav-titles">
+              <h1 id="sheet-title" class="nav-title"></h1>
+              <p class="nav-sub"><span id="sheet-status" class="badge"></span> <span id="sheet-sub"></span></p>
+            </div>
+            <button id="btn-sheet-close" class="close-btn" type="button" aria-label="Fermer">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 7.5l9 9M16.5 7.5l-9 9"/></svg>
             </button>
-            <button id="ctl-json" class="btn" type="button">Rapport JSON</button>
+          </header>
+          <div class="page-body">
+            <div id="sheet-actions" class="sheet-actions" data-peek>
+              <button class="act act-fait" type="button" data-st="fait">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Distribué
+              </button>
+              <button class="act act-anomalie" type="button" data-st="anomalie">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2L3 19.5h18z"/><path d="M12 10v4.4M12 16.9v.3"/></svg>Anomalie
+              </button>
+              <button class="act act-a_repasser" type="button" data-st="a_repasser">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>À repasser
+              </button>
+              <button class="act act-a_faire" type="button" data-st="a_faire">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>Remettre à faire
+              </button>
+            </div>
           </div>
         </div>
-        <div class="view-sec">
-          <h3>Clôture</h3>
-          <p class="view-note">Termine le passage : le bilan est gardé dans l'historique et la tournée repart à zéro pour le prochain passage. Rien n'est effacé du journal.</p>
-          <button id="ctl-close" class="btn wide danger" type="button">Clôturer le passage</button>
-          <details id="ctl-history" class="archived" hidden>
-            <summary>Passages clôturés (<span id="ctl-history-n">0</span>)</summary>
-            <ul id="ctl-history-list" class="vlist"></ul>
-          </details>
-        </div>
-        <button id="ctl-export" class="btn wide" type="button">
-          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Sauvegarder la progression
-        </button>
-        <p class="view-note">La sauvegarde contient tout l'historique horodaté des pointages et des anomalies, pour passer à un autre téléphone : gardez-la pour vous, ce n'est pas un rapport.</p>
       </div>
     </section>
 
-    <nav id="tabbar" class="tabbar" aria-label="Étapes de la tournée">
+    <nav id="tabbar" class="tabbar glass" aria-label="Étapes de la tournée">
       <button class="tab" type="button" data-tab="prepare">
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5h6v3H9z"/><path d="M15 5h2a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 17 21H7a1.5 1.5 0 0 1-1.5-1.5v-13A1.5 1.5 0 0 1 7 5h2"/><path d="M9 13l2 2 4-4"/></svg>
         <span>Préparer</span>
       </button>
       <button class="tab" type="button" data-tab="distribute">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14A1.5 1.5 0 0 1 20.5 7v10a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 17V7A1.5 1.5 0 0 1 5 5.5z"/><path d="M4 7l8 6 8-6"/></svg>
         <span>Distribuer</span>
       </button>
       <button class="tab" type="button" data-tab="control">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20.5h17"/><path d="M6.5 17V11M12 17V5.5M17.5 17v-8"/></svg>
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 20V13M10 20V8.5M14.5 20V11M19 20V5"/></svg>
         <span>Contrôler</span>
       </button>
     </nav>
 
-    <div id="update-banner" class="banner panel" hidden role="status">
+    <div id="update-banner" class="banner glass" hidden role="status">
       <span>Nouvelle version disponible</span>
-      <button id="btn-update" class="btn primary" type="button">Recharger</button>
+      <button id="btn-update" class="btn filled small" type="button">Recharger</button>
     </div>
 
-    <div id="toast" class="toast" hidden role="status">
+    <div id="toast" class="toast glass" hidden role="status">
       <span id="toast-msg"></span>
       <button id="toast-action" class="toast-action" type="button" hidden>Annuler</button>
     </div>
 
-    <dialog id="confirm" class="dialog panel">
+    <!-- alerte (confirmation) -->
+    <dialog id="confirm" class="alert glass">
       <form method="dialog">
-        <p id="confirm-msg"></p>
-        <div class="dialog-actions">
-          <button class="btn" type="submit" value="cancel">Non</button>
-          <button id="confirm-ok" class="btn primary" type="submit" value="ok">Confirmer</button>
+        <p id="confirm-msg" class="alert-msg"></p>
+        <div class="alert-actions">
+          <button class="alert-btn" type="submit" value="cancel">Annuler</button>
+          <button id="confirm-ok" class="alert-btn strong" type="submit" value="ok">Confirmer</button>
         </div>
       </form>
     </dialog>
 
-    <dialog id="reason-dialog" class="dialog panel reason-dialog" aria-labelledby="reason-title">
+    <!-- feuille d'actions : motif d'anomalie -->
+    <dialog id="reason-dialog" class="action-sheet" aria-labelledby="reason-title">
       <form method="dialog">
-        <h2 id="reason-title"></h2>
-        <p class="muted">Motif de l'anomalie</p>
-        <div id="reason-list" class="reason-list"></div>
-        <div class="dialog-actions">
-          <button class="btn" type="submit" value="cancel" autofocus>Annuler</button>
+        <div class="as-group glass">
+          <div class="as-head">
+            <h2 id="reason-title"></h2>
+            <p>Motif de l'anomalie</p>
+          </div>
+          <div id="reason-list" class="reason-list"></div>
         </div>
+        <button class="as-cancel glass" type="submit" value="cancel" autofocus>Annuler</button>
       </form>
     </dialog>
 
-    <dialog id="prompt" class="dialog panel">
+    <!-- alerte avec saisie -->
+    <dialog id="prompt" class="alert glass">
       <form method="dialog">
-        <label id="prompt-label" class="dialog-label" for="prompt-input"></label>
-        <input id="prompt-input" class="search" type="text" maxlength="80" autocomplete="off" enterkeyhint="done">
-        <p id="prompt-detail" class="dialog-detail" hidden></p>
-        <div class="dialog-actions">
-          <button class="btn" type="submit" value="cancel">Annuler</button>
-          <button id="prompt-ok" class="btn primary" type="submit" value="ok">OK</button>
+        <label id="prompt-label" class="alert-title" for="prompt-input"></label>
+        <p id="prompt-detail" class="alert-msg small" hidden></p>
+        <input id="prompt-input" class="field alert-field" type="text" maxlength="80" autocomplete="off" enterkeyhint="done">
+        <div class="alert-actions">
+          <button class="alert-btn" type="submit" value="cancel">Annuler</button>
+          <button id="prompt-ok" class="alert-btn strong" type="submit" value="ok">OK</button>
         </div>
       </form>
     </dialog>

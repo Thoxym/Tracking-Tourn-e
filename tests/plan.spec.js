@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
-const { DOCS, ID, addressData, total, tourTotal, tourStreets, trackErrors, openApp, statusOf, openLegend } = require('./helpers');
+const { DOCS, ID, addressData, total, tourTotal, tourStreets, trackErrors, openApp, statusOf, openLegend, openPage } = require('./helpers');
 
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
@@ -78,7 +78,7 @@ test('légende : recherche de rue sans accents ni casse', async ({ page }) => {
 
 test('Préparer : recherche de rue', async ({ page }) => {
   await openApp(page);
-  await page.click('#tabbar [data-tab="prepare"]');
+  await openPage(page, 'prepare', '#prep-streets-row');
   const { streets } = addressData();
   await page.locator('#prep-search').fill('GENEVE');
   await expect(page.locator('#prep-streets .vrow-name')).toHaveText(
@@ -176,8 +176,10 @@ test('gestes : glisser, pincement, double tap, appui long, tap en vue d\'ensembl
     while (map._anim) await frame();  // décalage animé de la carte
     out.sheetOpen = !sheetHidden();
     out.sheetTitleOk = document.getElementById('sheet-title').textContent.startsWith(`${a.n}`);
-    out.addrY = map.toScreen(a.x, a.y)[1];
-    out.sheetTop = document.getElementById('sheet').getBoundingClientRect().top;
+    // hors de la feuille : au-dessus au téléphone, à droite du panneau latéral sur grand écran
+    const [ax, ay] = map.toScreen(a.x, a.y);
+    const panel = document.getElementById('panel').getBoundingClientRect();
+    out.addrClear = window.neyronApp.panel.desktop ? ax > panel.right : ay < panel.top;
     return out;
   });
 
@@ -192,5 +194,5 @@ test('gestes : glisser, pincement, double tap, appui long, tap en vue d\'ensembl
   expect(r.overviewRatio).toBeCloseTo(2.5, 1);
   expect(r.overviewNoSheet, 'en vue d\'ensemble, un tap ne pointe rien').toBe(true);
   expect(r.sheetOpen && r.sheetTitleOk).toBe(true);
-  expect(r.addrY, 'adresse visible au-dessus du panneau').toBeLessThan(r.sheetTop);
+  expect(r.addrClear, 'adresse visible hors de la feuille').toBe(true);
 });

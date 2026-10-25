@@ -1,7 +1,7 @@
 // Préparer (branche facteur, phase L4) : charge estimée, ordre de passage, vérifications avant départ,
 // import d'un secteur CSV. Les attendus sont recalculés depuis addresses.json, indépendamment de l'app.
 const { test, expect } = require('@playwright/test');
-const { STREET, addressData, tourIds, tourStreets, trackErrors, openApp, waitReady } = require('./helpers');
+const { STREET, addressData, tourIds, tourStreets, trackErrors, openApp, waitReady, openLegend, openPage } = require('./helpers');
 
 const tab = (page, name) => page.locator(`#tabbar [data-tab="${name}"]`);
 const num = (a) => `${a.n}${a.rep ? ` ${a.rep}` : ''}`;
@@ -81,7 +81,7 @@ test('charge estimée : distance, durée, réglages mémorisés, reste à faire 
   expect(gap).toBeLessThanOrEqual(1);
 
   // réglages : virgule décimale acceptée, valeur invalide signalée puis abandonnée
-  await page.click('#prep-settings summary');
+  await openPage(page, 'prepare', '#prep-settings-row');
   await expect(page.locator('#set-sec')).toHaveValue('20');
   await expect(page.locator('#set-kmh')).toHaveValue('4');
   await page.locator('#set-sec').fill('0');
@@ -113,8 +113,7 @@ test('charge estimée : distance, durée, réglages mémorisés, reste à faire 
 test('ordre de passage : monter, descendre, sens ; suivi par la légende et Contrôler, conservé', async ({ page }) => {
   const errors = trackErrors(page);
   await openApp(page);
-  await tab(page, 'prepare').click();
-  await page.click('#prep-order-box summary');
+  await openPage(page, 'prepare', '#prep-order-row');
   const alpha = tourStreets().map((st) => st.name);
   await expect(orderNames(page)).toHaveText(numbered(alpha));
   await expect(page.locator('#prep-order-n')).toHaveText(`${alpha.length} rues`);
@@ -140,16 +139,14 @@ test('ordre de passage : monter, descendre, sens ; suivi par la légende et Cont
     .toContainText(`n° ${num(gare.at(-1))} → ${num(gare[0])}`);
   await expect(page.locator('#prep-load-dist')).toHaveText(`≈ ${load(groups(tourIds(), order, ['Rue de la Gare'])).dist}`);
 
-  await tab(page, 'distribute').click();
-  if (await page.locator('#legend').isHidden()) await page.click('#btn-legend');
+  await openLegend(page);
   await expect(page.locator('.lg-row:not([hidden]) .lg-name')).toHaveText(order);
   await tab(page, 'control').click();
   await expect(page.locator('#ctl-streets .vrow-name')).toHaveText(order);
 
   await page.reload();
   await waitReady(page);
-  await tab(page, 'prepare').click();
-  await page.click('#prep-order-box summary');
+  await openPage(page, 'prepare', '#prep-order-row');
   await expect(orderNames(page)).toHaveText(numbered(order));
   await expect(rev).toHaveAttribute('aria-pressed', 'true');
 
@@ -172,20 +169,19 @@ test('vérifications : numéros sans bâtiment, bâtiments sans adresse, numéro
   expect(noBld.length).toBeGreaterThan(0);
   expect(near.length).toBeGreaterThan(0);
 
-  await tab(page, 'prepare').click();
-  await page.click('#prep-checks-box summary');
-  await expect(page.locator('#prep-checks-n')).toHaveText(`${noBld.length + near.length} points à vérifier`);
+  await openPage(page, 'prepare', '#prep-checks-row');
+  await expect(page.locator('#prep-checks-n')).toHaveText(`${noBld.length + near.length} points`);
   await expect(page.locator('[data-check="gaps"] .check-none')).toBeVisible();
   await expect(page.locator('[data-check="nobld"] .vrow-name')).toHaveText(noBld.map(label));
   await expect(page.locator('[data-check="unaddressed"] .vrow-name')).toHaveText(near.map(({ u }) => `Bâtiment de ${u.a} m²`));
 
-  // bâtiment sans adresse : la carte se centre dessus, avec un repère
+  // bâtiment sans adresse : la feuille se réduit, le plan se centre dessus, avec un repère
   await page.locator('[data-check="unaddressed"] .vrow').first().click();
-  await expect(page.locator('#app')).toHaveAttribute('data-tab', 'distribute');
+  await expect(page.locator('#app')).toHaveAttribute('data-tab', 'prepare');
   await expect(page.locator('#map .mark-ring')).toHaveAttribute('display', 'inline');
   await expect.poll(() => centerError(page, near[0].u.x, near[0].u.y)).toBeLessThan(3);
-  // numéro sans bâtiment : panneau d'adresse ouvert
-  await tab(page, 'prepare').click();
+  // numéro sans bâtiment : fiche d'adresse ouverte
+  await openPage(page, 'prepare', '#prep-checks-row');
   await expect(page.locator('#map .mark-ring')).toHaveAttribute('display', 'none');
   await page.locator('[data-check="nobld"] .vrow').first().click();
   await expect(page.locator('#sheet')).toBeVisible();
@@ -241,7 +237,7 @@ test('import d\'un secteur CSV : ordre, sens, lignes invalides signalées, Windo
   expect(await page.evaluate(() => window.neyronApp.store.activeTour.ids.length)).toBe(ids.length);
 
   // ordre du fichier ; Route de Genève en numéros décroissants (193 → 58)
-  await page.click('#prep-order-box summary');
+  await openPage(page, 'prepare', '#prep-order-row');
   await expect(orderNames(page)).toHaveText(numbered(['Route de Genève', 'Chemin du Barry', 'Montée Neuve', 'Rue de la Gare']));
   await expect(page.locator('[aria-label="Inverser le sens : Route de Genève"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator(`#prep-order .order-row[data-s="${s('Route de Genève')}"] .vrow-sub`))

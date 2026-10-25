@@ -1,6 +1,6 @@
 // Cas 2 et 3 : pointage d'un numéro (persistant), « Toute la rue distribuée » puis Annuler.
 const { test, expect } = require('@playwright/test');
-const { ID, STREET, tourTotal, trackErrors, openApp, waitReady, tapAddress, statusOf, legendCount, openLegend } = require('./helpers');
+const { ID, STREET, tourTotal, trackErrors, openApp, waitReady, tapAddress, statusOf, legendCount, openLegend, setDetent } = require('./helpers');
 
 const visibleActions = (page) => page.evaluate(() => [...document.querySelectorAll('#sheet-actions .act')]
   .filter((b) => !b.hidden).map((b) => b.dataset.st));
@@ -81,7 +81,7 @@ test('« Toute la rue distribuée » puis Annuler : états précédents restaur�
   await expect(page.locator(`.lg-row[data-s="${STREET.gare}"]`)).toHaveClass(/complete/);
   await expect(all).toBeDisabled();
   await expect(page.locator('#total-progress')).toHaveText(`15/${tourTotal()}`);
-  if (await page.locator('#btn-legend-close').isVisible()) await page.click('#btn-legend-close');
+  await setDetent(page, 'peek');  // feuille réduite : les boutons de la carte reviennent
 
   // Annuler 1 : la rue revient à l'état précédent, « à repasser » compris
   await page.click('#btn-undo');

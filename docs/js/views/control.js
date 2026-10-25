@@ -1,6 +1,6 @@
-// Onglet Contrôler : bilan du passage en cours (distribuées, restantes, à repasser, anomalies, temps restant
-// estimé), détail par rue dans l'ordre de passage, anomalies par motif, adresses non traitées, rapport CSV / JSON,
-// clôture du passage et historique des passages clôturés, sauvegarde.
+// Onglet Contrôler : bilan du passage en cours (anneau de progression, distribuées, restantes, à repasser,
+// anomalies, temps restant estimé), puis des pages de la feuille : détail par rue dans l'ordre de passage,
+// anomalies par motif, adresses non traitées, passages clôturés. Rapport CSV / JSON, clôture du passage.
 
 import { REASONS, ST_AGAIN, ST_ANOMALY, ST_DONE, isTreated, reasonLabel } from '../store.js';
 import { reportCsv, reportJson } from '../report.js';
@@ -12,6 +12,7 @@ const $ = (id) => document.getElementById(id);
 const HOURS_KEY = 'neyron-tournees.report-hours';  // préférence d'appareil : heures dans le rapport
 const date = (t) => new Date(t).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 const agree = (n, word) => `${word}${n > 1 ? 's' : ''}`;
+const RING = 2 * Math.PI * 27;  // circonférence de l'anneau (r = 27 dans le SVG)
 
 export class ControlView {
   constructor(app) {
@@ -20,7 +21,6 @@ export class ControlView {
     app.tabs.onChange((tab) => { if (tab === 'control') this.render(); });
     app.store.onChange(() => { if (app.tabs.current === 'control') this.render(); });
     // exports synchrones jusqu'à la feuille de partage : appelés directement dans le geste
-    $('ctl-export').addEventListener('click', () => app.backup.exportNow());
     $('ctl-csv').addEventListener('click', () => this.exportReport('csv'));
     $('ctl-json').addEventListener('click', () => this.exportReport('json'));
     $('ctl-close').addEventListener('click', () => this.closePassage());
@@ -80,8 +80,9 @@ export class ControlView {
     $('ctl-anom').textContent = String(anom);
     const treated = done + anom;
     const pct = total ? Math.round((100 * treated) / total) : 0;
-    $('ctl-bar').style.width = `${pct}%`;
-    $('ctl-summary').textContent = `${treated} / ${total} adresses traitées · ${pct} %`;
+    $('ctl-ring').style.strokeDashoffset = String(RING * (1 - (total ? treated / total : 0)));
+    $('ctl-pct').textContent = `${pct} %`;
+    $('ctl-summary').textContent = `${treated} / ${total} adresses traitées`;
     // reste : adresses non traitées (à repasser comprises), dans l'ordre de passage
     const seq = ui.sequence();
     const left = workload(seq.map((g) => ({ ...g, addrs: g.addrs.filter((a) => !isTreated(store.status(a.id))) })),
@@ -169,7 +170,7 @@ export class ControlView {
       if (k === closures.length - 1 && store.canReopen()) {
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = 'btn';
+        b.className = 'btn tinted small';
         b.id = 'ctl-reopen';
         b.textContent = 'Rouvrir';
         b.addEventListener('click', () => this.reopen());
@@ -200,9 +201,8 @@ export class ControlView {
     const msg = `Clôturer le passage de « ${tour.name} » ?`
       + (left ? ` ${plural(left, 'adresse non traitée', 'adresses non traitées')}${again ? ` (dont ${again} à repasser)` : ''} le resteront dans le bilan.` : ' Toutes les adresses sont traitées.')
       + ' Le bilan est gardé dans l\'historique et la tournée repart à zéro pour le prochain passage. Exportez le rapport détaillé avant : ensuite, seul le bilan reste affiché.';
-    if (!(await ui.confirm(msg, 'Clôturer'))) return;
+    if (!(await ui.confirm(msg, 'Clôturer', { destructive: true }))) return;
     const entry = await store.closePassage(ids);
-    if (this.app.distribute.guided) this.app.distribute.stop();  // la reprise de ce passage est terminée
     // le rapport du passage clôturé reste disponible juste après (toucher = geste pour la feuille de partage)
     ui.toast(`Passage clôturé : ${entry.done} ${agree(entry.done, 'distribuée')}, ${entry.todo} non ${agree(entry.todo, 'traitée')}`, {
       ms: 8000,

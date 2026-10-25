@@ -2,7 +2,7 @@
 // (sans heure par défaut), clôture du passage, historique et réouverture, validation des passages importés.
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
-const { addressData, tourIds, tourTotal, tourStreets, trackErrors, openApp, waitReady, statusOf } = require('./helpers');
+const { addressData, tourIds, tourTotal, tourStreets, trackErrors, openApp, waitReady, statusOf, openPage } = require('./helpers');
 
 const tab = (page, name) => page.locator(`#tabbar [data-tab="${name}"]`);
 const num = (a) => `${a.n}${a.rep ? ` ${a.rep}` : ''}`;
@@ -37,22 +37,25 @@ test('synthèse : anomalies par motif, non traitées dans l\'ordre de passage, u
   const a = await seed(page);
   await tab(page, 'control').click();
   await expect(page.locator('#ctl-anom-n')).toHaveText('3');
-  await page.click('#ctl-anom-box summary');
+  await openPage(page, 'control', '#ctl-anom-box');
   await expect(page.locator('#ctl-reasons .rbar-label')).toHaveText(['Boîte absente', 'Destinataire inconnu']);
   await expect(page.locator('#ctl-reasons .rbar-n')).toHaveText(['2', '1']);
   await expect(page.locator('#ctl-anom-list .vrow-name')).toHaveText(a.slice(3, 6).map(label));
   await expect(page.locator('#ctl-anom-list .vrow-sub')).toHaveText(['Boîte absente', 'Boîte absente', 'Destinataire inconnu']);
 
   await expect(page.locator('#ctl-untreated-n')).toHaveText(String(tourTotal() - 6));
-  await page.click('#ctl-untreated-box summary');
+  await openPage(page, 'control', '#ctl-untreated-box');
   const rows = page.locator('#ctl-untreated-list .vrow');
   await expect(rows).toHaveCount(tourTotal() - 6);
   await expect(rows.first().locator('.vrow-name')).toHaveText(label(a[6]));
   await expect(rows.first().locator('.vrow-sub')).toHaveText('à repasser');
   await expect(rows.nth(1).locator('.vrow-sub')).toHaveText('à faire');
-  await rows.first().click();
-  await expect(page.locator('#app')).toHaveAttribute('data-tab', 'distribute');
+  await rows.first().click();  // fiche d'adresse par-dessus Contrôler, plan centré dessus
+  await expect(page.locator('#app')).toHaveAttribute('data-tab', 'control');
+  await expect(page.locator('#sheet')).toBeVisible();
   await expect(page.locator('#sheet-title')).toHaveText(label(a[6]));
+  await page.click('#btn-sheet-close');
+  await expect(page.locator('#ctl-untreated-list')).toBeVisible();  // retour à la liste
   expect(errors).toEqual([]);
 });
 
@@ -77,7 +80,7 @@ test('rapport CSV et JSON : une ligne par adresse, motifs, sans heure par défau
   await expect(page.locator('#toast-msg')).toHaveText(`Rapport téléchargé : ${csv.name}`);
 
   // heures de pointage sur demande, préférence mémorisée
-  await page.click('label.check');
+  await page.click('label[for="ctl-hours"]');
   const timed = (await download(page, () => page.click('#ctl-csv'), testInfo, 'h.csv')).buf.toString('utf-8').slice(1).split('\r\n');
   expect(timed[0]).toBe('rue;numero;complement;cote;statut;motif;heure');
   expect(timed[1]).toMatch(/;distribuée;;\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
@@ -86,7 +89,7 @@ test('rapport CSV et JSON : une ligne par adresse, motifs, sans heure par défau
   await waitReady(page);
   await tab(page, 'control').click();
   await expect(page.locator('#ctl-hours')).toBeChecked();
-  await page.click('label.check');
+  await page.click('label[for="ctl-hours"]');
 
   const json = JSON.parse((await download(page, () => page.click('#ctl-json'), testInfo, 'r.json')).buf.toString('utf-8'));
   expect(json).toMatchObject({
@@ -145,14 +148,14 @@ test('clôture du passage : bilan dans l\'historique, tournée à zéro, rapport
   await expect(page.locator('#ctl-close')).toBeDisabled();
   await expect(page.locator('#ctl-passage')).toHaveText(/^Passage en cours depuis le \d\d\/\d\d\/\d{4}$/);
   await expect(page.locator('#ctl-history-n')).toHaveText('1');
-  await page.click('#ctl-history summary');
+  await openPage(page, 'control', '#ctl-history');
   await expect(page.locator('#ctl-history-list .vrow-name')).toHaveText(/^Passage du \d\d\/\d\d\/\d{4}$/);
   await expect(page.locator('#ctl-history-list .vrow-sub')).toHaveText(`3 distribuées · 3 anomalies · ${tourTotal() - 6} non traitées`);
 
-  await tab(page, 'prepare').click();
+  await openPage(page, 'prepare', '#prep-tour-row');
   await expect(page.locator('#tour-list .tour-row.active .vrow-sub')).toHaveText(`${tourTotal()} adresses · 0 distribuée`);
 
-  // réouverture : possible tant que rien n'a été pointé
+  // réouverture : possible tant que rien n'a été pointé (Contrôler retrouve sa page)
   await tab(page, 'control').click();
   await page.click('#ctl-reopen');
   await expect(page.locator('#toast-msg')).toHaveText('Dernier passage rouvert');
@@ -161,6 +164,7 @@ test('clôture du passage : bilan dans l\'historique, tournée à zéro, rapport
   expect(await statusOf(page, a[3].id)).toBe('anomalie');
 
   // nouvelle clôture, puis un pointage : plus de réouverture ; tout survit à une relance
+  await tab(page, 'control').click();  // onglet touché à nouveau : page principale
   await page.click('#ctl-close');
   await page.click('#confirm-ok');
   await expect(page.locator('#ctl-done')).toHaveText('0');
