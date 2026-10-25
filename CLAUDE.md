@@ -441,10 +441,59 @@ Pourquoi pas Dijkstra seul : il donne le plus court chemin entre deux points. L'
   - **Mentions dans le menu ⋯** : BAN et cadastre (Etalab), IGN BD TOPO, © contributeurs OpenStreetMap (ODbL). `roads.json`, base dérivée d'OSM, est sous ODbL (dépôt public : conforme).
   - **Tests** : `tests/itineraire.spec.js` : cohérence du graphe, chaque adresse rattachée, accès voiture, pairs et impairs de part et d'autre de la Rue de la Gare, mentions du menu.
   - **Constat pour I2** : une partie de la Route de Genève est en **2 chaussées à sens unique**, et chaque côté se rattache à sa chaussée. Un arrêt tissé doit donc regrouper les points de remise par **distance de marche autour de l'arrêt**, pas par tronçon.
-- [ ] **I2 — Moteur** :
-  - `js/routing.js` : Dijkstra sur arcs orientés, demi-tours pénalisés ;
-  - `js/itinerary.js` : arrêts, tissage, ordre de visite, ordre dans l'arrêt ;
-  - `js/route-worker.js`.
+- [x] **I2 — Moteur** ✅ (25/10/2026). Sans DOM, exécuté dans un worker.
+  - **`js/routing.js` (`RoadGraph`)** :
+    - **Dijkstra sur les arcs orientés** : arc 2e de a vers b, 2e+1 de b vers a, tas binaire, coûts en secondes par mode ;
+    - **voiture** : vitesse du tronçon, voies privées ×1,5, demi-tour 60 s (20 s en impasse), virage serré 6 s, interdit sur place ;
+    - **vélo** : 15 km/h (×0,66 sur chemin, sentier ou desserte), demi-tour 8 s, demi-tour sur place 5 s ;
+    - **pied** : 4,5 km/h (escalier ×0,5), sens uniques ignorés, demi-tour gratuit ;
+    - `search` part d'une position {arc, s} et renvoie le coût d'entrée dans chaque arc ; `costTo` et `pathTo` donnent le coût et le chemin jusqu'à une position (à pied ou à vélo, une position est aussi atteignable dans l'autre sens) ;
+    - `main(mode)` : composante connexe principale du mode ; une adresse rattachée à un îlot (parking, sentier isolé) prend le tronçon le plus proche de cette composante ;
+    - géométrie : `pointAt`, `bearingAt`, `project` (côté +1 à droite, repère SVG), `nearest`, `arcPolyline`.
+  - **`js/itinerary.js` (`computeRoute`)**.
+    - **Réglages** : `settingsFor` complète les réglages enregistrés avec les valeurs par défaut du mode.
+
+      | Mode | Marche max | Arrêt | Boîte | Traversée | Vitesse |
+      |---|---|---|---|---|---|
+      | voiture | 40 m | 20 s | 15 s | 10 s | marche 4,5 km/h |
+      | vélo | 25 m | 8 s | 15 s | 10 s | 15 km/h |
+      | à pied | — | — | 15 s | 10 s | 4,5 km/h |
+
+      Les bornes sont dans `LIMITS`. Tissage `auto` / `always` / `never`, `weaveBy` {clé de voie : `weave` | `sides`}. Départ et arrivée : un point, ou `end: 'start'`. `seed` fixe le tirage aléatoire.
+    - **Arrêts (voiture, vélo)** : glouton le long de chaque tronçon. L'arrêt se place 0,8 × marche max en avant de la première adresse libre. Il prend les points de remise à moins de la marche max (distance à vol d'oiseau), sur le même tronçon ou la même rue, ce qui couvre les 2 chaussées de la Route de Genève.
+      - Si le tissage est refusé, l'arrêt ne sert que le côté de la première adresse, et il est recentré sur l'étendue de ses adresses.
+      - Une adresse à long accès forme un arrêt à elle seule.
+      - **Orientation** : sens permis par les sens uniques. Un arrêt d'un seul côté est parcouru avec ce côté à droite, si ce sens est permis.
+      - **Service** : arrêt + boîtes + marche (2 × étendue + 2 × distance route-boîte) + traversées (changements de côté depuis le véhicule garé à droite, et le retour).
+    - **Dépôt depuis le véhicule** (voiture, `fromVehicle`) : boîtes à 3 m de la route au plus, servies en roulant, par tronçon et par côté.
+    - **À pied** : portions de rue. Les tronçons d'une même rue sont mis bout à bout (`streetChains`, coupés où la rue se ramifie, et au-delà de 200 m sans adresse). Une portion couvre les deux côtés si la rue est tissée, sinon un côté : on fait un côté de bout en bout, puis l'autre au retour.
+    - **Ordre de visite** :
+      - matrice des temps entre orientations (une recherche de Dijkstra par orientation) ;
+      - unités injoignables écartées et signalées (`unreachable`) ;
+      - départ : plus proche voisin, et ordre par rues (meilleure orientation par programmation dynamique) ;
+      - recherche locale : orientation, 2-opt asymétrique (chaque unité inversée prend son orientation inverse), déplacement de 1 à 3 unités, à l'endroit ou inversées ;
+      - perturbation « double pont » jusqu'au budget de temps (2 s par défaut), générateur mulberry32 à graine.
+    - **Dans une unité** : ordre le long du sens de parcours. Tissée, les deux côtés alternent selon la position : Route de Genève, `60D 58D 59G 62D 59bisG 64D…`
+    - **Sortie** :
+      - arrêts : ids dans l'ordre, côtés, arcs et abscisses d'entrée et de sortie, chemin d'une portion, point, marche, service ;
+      - trajets (arcs, s, m) ;
+      - totaux : durée, trajets, service, km roulés, km marchés ;
+      - `baseline` : même calcul dans l'ordre par rues ;
+      - `missing`, `unreachable`.
+  - **`js/route-worker.js`** (worker module) : charge `roads.json` et `addresses.json` une fois. **`js/route-client.js`** (`RouteClient`) : une demande à la fois, une nouvelle demande annule la précédente (worker relancé), avec la progression (`arrets`, `matrice`, `optimisation`).
+  - **Mesures**, Node, budget de 2 s :
+
+    | Mode | Tournée par défaut | Ordre par rues | Commune entière (budget 3 s) |
+    |---|---|---|---|
+    | voiture | 60 arrêts, ≈ 3 h 46 | 4 h 24 | 297 arrêts |
+    | vélo | 81 arrêts, ≈ 3 h 18 | 4 h 26 | 401 arrêts |
+    | à pied | 22 portions, ≈ 3 h 26 | 4 h 38 | 246 portions |
+  - **À calibrer sur le terrain** : en voiture, la marche autour de chaque arrêt (aller-retour au véhicule) pèse lourd ; les réglages par défaut seront à ajuster avec l'utilisateur.
+  - **Tests** (`tests/itineraire.spec.js`, WebKit et Chromium) :
+    - sens unique : la voiture fait le tour, le piéton revient sur ses pas ;
+    - tournée par défaut : chaque adresse une fois, marche max respectée, mieux que l'ordre par rues, trajets complets, même graine même résultat ;
+    - Route de Genève : tissée, arrêts mêlant pairs et impairs ; non tissée, un seul côté, toujours à droite ; à pied, longues portions d'un seul côté ;
+    - worker : annulation, progression, résultat.
 - [ ] **I3 — Préparer, page Itinéraire** :
   - réglages : véhicule, tissage, départ / arrivée ;
   - calcul et aperçu ;
@@ -567,6 +616,7 @@ neyron-tournees/
 │   ├── css/app.css
 │   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js,
 │   │                     #   tabs.js, sheet.js, tourplan.js, report.js, views/ (prepare.js, distribute.js, control.js, common.js) — branche facteur
+│   │                     #   routing.js, itinerary.js, route-worker.js, route-client.js — itinéraire (§2 quater)
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, roads.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
@@ -855,7 +905,7 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   - Au grand cran, les boutons de la carte sont masqués : passer au cran moyen avant de toucher le menu ⋯ ou Annuler.
   - Un onglet retrouve la page où on l'avait laissé : `openPage` retouche l'onglet pour revenir à la page principale.
 - **Captures sous WebKit (Windows)** : les animations CSS y sont lentes, une capture peut tomber en pleine entrée de page ou de dialogue (page blanche, dialogue à moitié transparent). Capturer avec `reducedMotion: 'reduce'`, comme les tests. Ce WebKit **ne dessine pas** `backdrop-filter` (le plan reste net sous le verre) : le flou ne se juge que sur l'iPhone, d'où des matériaux assez opaques pour rester lisibles sans flou.
-- **Machine chargée** (navigateur de l'utilisateur ouvert) : avec 8 workers, des démarrages de l'app sous WebKit dépassent 15 s (`waitReady`), sans rapport avec le code (un essai sans flou a donné plus d'échecs). Lancer avec `--workers=4` ou `5` pour distinguer les vrais échecs.
+- **Machine chargée** (navigateur de l'utilisateur ouvert, `com.docker.llama-server` actif) : des démarrages de l'app sous WebKit dépassent 15 s, sans rapport avec le code (un essai sans flou a donné plus d'échecs ; les tests relancés seuls passent). `waitReady` attend donc 30 s. Lancer avec `--workers=3` à `5` pour distinguer les vrais échecs (25/10/2026, après I2 : 5 workers → quelques tests WebKit réussis au second essai ; WebKit seul avec 3 workers → 66/66).
 - **Séparateurs des listes groupées** : `.group > * + *::before` dessine le trait fin ; un enfant direct ne peut donc pas utiliser son propre `::before` (pastille de couleur de l'ordre de passage : élément `.order-dot`).
 - **`<dialog>` en bas d'écran** : les styles du navigateur centrent un dialogue modal et bornent sa hauteur ; la feuille d'actions se place en `position: fixed; inset: auto 0 0 0`, sans `max-height`.
 - **Animations dans les tests** : mesurer un zoom après un délai fixe est instable sous WebKit chargé. Attendre la fin de l'animation (`map._anim` nul, `k` modifié).
@@ -1076,3 +1126,8 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - point de remise estimé sur la limite de parcelle au droit de l'adresse, car la BAN place souvent le point sur la maison ;
   - emprise élargie à 1,5 km pour les routes principales, car des sens uniques coupés isolaient le bord du Rhône ;
   - dessertes OSM carrossables comme voies privées.
+- **25/10/2026** — Commit `5a92a06` (I1). I2 :
+  - Dijkstra sur les arcs orientés plutôt que sur les nœuds : demi-tours, sens uniques et côté de la route exacts ;
+  - arrêts regroupés par distance de marche autour de l'arrêt (et non par tronçon), pour tisser par-dessus les 2 chaussées ;
+  - à pied, portions de rue mises bout à bout, pour que « non tissé » donne un côté puis l'autre et pas un zigzag tronçon par tronçon ;
+  - heuristique reproductible (graine) et bornée en temps, dans un worker.

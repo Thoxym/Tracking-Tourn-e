@@ -56,7 +56,7 @@ function trackErrors(page) {
 async function waitReady(page) {
   await page.waitForFunction(
     () => window.neyronApp?.map?._ready && document.getElementById('loading').hidden,
-    null, { timeout: 15_000 });
+    null, { timeout: 30_000 });  // machine chargée : un démarrage WebKit peut dépasser 15 s (CLAUDE.md §10)
 }
 
 async function openApp(page, url = './') {
