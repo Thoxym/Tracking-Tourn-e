@@ -53,7 +53,7 @@ npx playwright test                                 # tests (serveur lancé par 
 
 ## 2. Plan d'action v0.1 (à cocher au fil de l'eau)
 
-**État : phases 0 à 9 terminées, phase 10 déployée le 19/10/2026 : app en ligne sur https://thoxym.github.io/Tracking-Tourn-e/ (dépôt public github.com/Thoxym/Tracking-Tourn-e, `main`, Pages sur `/docs`). Historique réécrit en e-mail `noreply` (identifiants des commits changés : `2ccfec2` phases 0-4 … `6fd0887` phase 9, `9f7d545` BASE_URL). Reste : checklist iPhone (§3) par l'utilisateur. Depuis le 20/10/2026, le travail se fait sur la branche **`dev_tracking_tournee_laposte`** (produit facteur, plan en §2 bis ; itinéraire reporté). Tout nouveau push reste soumis à l'accord de l'utilisateur (règle 3).**
+**État : phases 0 à 9 terminées, phase 10 déployée le 19/10/2026 : app en ligne sur https://thoxym.github.io/Tracking-Tourn-e/ (dépôt public github.com/Thoxym/Tracking-Tourn-e, `main`, Pages sur `/docs`). Historique réécrit en e-mail `noreply` (identifiants des commits changés : `2ccfec2` phases 0-4 … `6fd0887` phase 9, `9f7d545` BASE_URL). Reste : checklist iPhone (§3) par l'utilisateur. Depuis le 20/10/2026, le travail se fait sur la branche **`dev_tournees`** (produit facteur, plan en §2 bis ; renommée le 26/10/2026 pour ne pas citer de marque). Le 26/10/2026, `main` a avancé jusqu'à cette branche : la v0.1 en ligne est remplacée par la version facteur (L8). Tout nouveau push reste soumis à l'accord de l'utilisateur (règle 3).**
 
 ### Phase 0 — Initialisation ✅
 - [x] `git init` (local uniquement, branche `main`).
@@ -147,7 +147,7 @@ npx playwright test                                 # tests (serveur lancé par 
 
 ---
 
-## 2 bis. Branche `dev_tracking_tournee_laposte` : produit « facteur » (créée le 20/10/2026)
+## 2 bis. Branche `dev_tournees` : produit « facteur » (créée le 20/10/2026)
 
 `main` garde la v0.1 en ligne. Cette branche fait évoluer l'app vers la **distribution du courrier** : savoir ce qui a été distribué, ce qui reste à traiter, si une rue est entièrement couverte, pourquoi une adresse n'a pas pu être desservie, et reprendre une tournée interrompue sans oublier de boîte. Utilisable **d'une seule main**, sans menus imbriqués. **Pas de calcul d'itinéraire** : la personne compose sa tournée elle-même. Une proposition d'optimisation viendra plus tard (§12 A).
 
@@ -336,12 +336,15 @@ npx playwright test                                 # tests (serveur lancé par 
     - cibles ≥ 44 px et boutons nommés dans les 3 vues, le panneau, le choix du motif, la reprise, le menu et l'éditeur de rue.
 
     Sabotages détectés (migration v0.1 retirée, écrasement des boutons remis). Suite : 117 réussis, 1 ignoré. Robustesse, sauvegarde, tournées et contrôler × 3 : 114/114.
-- [ ] **L8 — Déploiement de la branche** (canal à décider, accord explicite).
+- [x] **L8 — Déploiement de la branche** (26/10/2026, accord de l'utilisateur).
+  - **Canal** : `main` avance jusqu'à la branche (avance rapide, sans réécriture), Pages inchangé (`main`, `/docs`), même URL. L'app installée voit la mise à jour (bandeau « Recharger ») et reprend la progression v0.1 dans la tournée « Neyron — 10 rues » (migration L3). La v0.1 reste accessible par son commit (`4a13e70`).
+  - **Branche renommée** `dev_tournees` (l'ancien nom citait une marque) ; l'ancienne branche est supprimée sur GitHub. Les anciennes versions de ce fichier dans l'historique gardent l'ancien nom (pas de réécriture : `main` est protégée contre le force-push).
+  - Reste : essai sur l'iPhone (§3 et guidage en conditions réelles), par l'utilisateur.
 
 **À valider par l'utilisateur** :
 - ~~statuts et liste des motifs~~ : validés le 20/10/2026 (L5) ;
 - nom de l'app (sans marque La Poste) ;
-- canal de déploiement de la branche.
+- ~~canal de déploiement de la branche~~ : fusion dans `main` (26/10/2026).
 
 ### 2 ter. Refonte de l'interface (décidée le 25/10/2026, avant toute publication)
 Style **Liquid Glass** (iOS 26) : matériaux translucides flous (`backdrop-filter`), coins très arrondis, composants iOS (listes groupées, interrupteurs, contrôle segmenté, alertes, feuille d'actions, menu déroulant). **Au plus simple, sans perdre de fonction.**
@@ -1213,7 +1216,7 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
 
   Le serveur de dev (`http.server` sur toutes les interfaces, journal des requêtes en local) a été arrêté. Tests rendus lançables contre le site en ligne (`BASE_URL`).
 - **19/10/2026** — Carte de Cottance abandonnée : pas nécessaire pour valider le GPS. Prochaine session : mode préparation de tournée sur toute la commune, avec itinéraire le plus court (§12 A). Plus tard : carte de Lyon 3e autour de la gare Part-Dieu (§12 B).
-- **20/10/2026** — Branche `dev_tracking_tournee_laposte` : l'app évolue vers la distribution du courrier (préparer / distribuer / contrôler), avec une barre d'onglets en bas, sobre. Pas d'itinéraire calculé pour l'instant. Plan et limites d'architecture en §2 bis. Plan validé par l'utilisateur.
+- **20/10/2026** — Branche `dev_tournees` (nom actuel) : l'app évolue vers la distribution du courrier (préparer / distribuer / contrôler), avec une barre d'onglets en bas, sobre. Pas d'itinéraire calculé pour l'instant. Plan et limites d'architecture en §2 bis. Plan validé par l'utilisateur.
 - **20/10/2026** — L1 : vues Préparer et Contrôler posées par-dessus la carte plutôt que de la masquer. Avec `display: none`, la carte aurait une taille nulle (cadrages faux, suivi GPS cassé), et Préparer réutilisera la carte pour la sélection (L3). Distribuer est l'onglet par défaut.
 - **20/10/2026** — L2 : toute la commune (941 adresses, 90 voies).
   - Les 10 rues deviennent la tournée prédéfinie `default`.
@@ -1310,3 +1313,4 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - feuille de navigation compacte : arrêt et temps restant en petit, les deux actions seules au petit cran, adresses à aller chercher en tirant la feuille, Quitter tout en bas ; « Tout l'arrêt distribué » aussi pour une seule adresse ;
   - trajets mis en mémoire plutôt qu'un recalcul complet à chaque retouche ;
   - voix distantes écartées, même si c'est la seule voix française du navigateur : les annonces contiennent des adresses et des repères.
+- **26/10/2026** — Commit `5afdf18` (I7). L8, décisions de l'utilisateur : publication par avance rapide de `main` (même URL, progression v0.1 reprise) plutôt qu'une source Pages sur la branche ou un second dépôt ; branche renommée `dev_tournees`.
