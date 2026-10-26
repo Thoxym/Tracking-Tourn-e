@@ -1,5 +1,7 @@
 // Plan SVG métrique (1 unité = 1 m, nord en haut) : couches, zoom et déplacement par le viewBox,
 // gestes (glisser, pincer, molette, clavier) et résolution des taps sur les numéros.
+// Rotation (carte orientée dans le sens de la marche, navigation) : un groupe racine tourne autour du centre de la vue ;
+// les conversions écran <-> plan en tiennent compte, numéros et noms de rues restent droits.
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const K_MAX = 40;              // zoom maximal, en pixels par mètre
@@ -32,6 +34,9 @@ export class MapView {
     this.cy = this.H / 2;
     this.kMin = 0.05;
     this.padding = { top: 0, right: 0, bottom: 0, left: 0 };
+    this.rotDeg = 0;         // rotation du plan à l'écran (degrés, sens horaire) ; 0 : nord en haut
+    this.rot = 0;
+    this._textRot = 0;       // rotation pour laquelle les textes ont été redressés
     this.hidden = new Set();
     this.selectedStreet = null;
     this.selectedId = null;
@@ -61,7 +66,8 @@ export class MapView {
 
   _build(plan) {
     const svg = (this.svg = el('svg', { class: 'map', 'aria-hidden': 'true' }, this.container));
-    const layer = (cls) => el('g', { class: cls }, svg);
+    this.root = el('g', { class: 'root' }, svg);
+    const layer = (cls) => el('g', { class: cls }, this.root);
     const lParcels = layer('l-parcels');
     const lTraces = layer('l-traces');
     const lBuildings = layer('l-buildings');
@@ -105,10 +111,12 @@ export class MapView {
       this.buildingEls.set(bat, { path, ids: addrs.filter((a) => !a.ctx).map((a) => a.id) });
     }
 
+    this.labelEls = [];
     groups(this.lLabels).forEach((g, i) => {
       for (const lb of streets[i].labels || []) {
         const t = el('text', { class: 'slabel', transform: `translate(${lb.x} ${lb.y}) rotate(${lb.a})` }, g);
         t.textContent = streets[i].name;
+        this.labelEls.push({ el: t, ...lb });
       }
     });
 
@@ -212,14 +220,69 @@ export class MapView {
     return this.container.getBoundingClientRect();
   }
 
+  // décalage à l'écran (pixels, depuis le centre) -> décalage sur le plan (mètres), et l'inverse, rotation comprise
+  _s2w(ox, oy, k = this.k) {
+    const c = Math.cos(this.rot);
+    const s = Math.sin(this.rot);
+    return [(ox * c + oy * s) / k, (-ox * s + oy * c) / k];
+  }
+
+  _w2s(dx, dy, k = this.k) {
+    const c = Math.cos(this.rot);
+    const s = Math.sin(this.rot);
+    return [(dx * c - dy * s) * k, (dx * s + dy * c) * k];
+  }
+
   toWorld(clientX, clientY) {
     const r = this._rect();
-    return [this.cx + (clientX - r.left - r.width / 2) / this.k, this.cy + (clientY - r.top - r.height / 2) / this.k];
+    const [dx, dy] = this._s2w(clientX - r.left - r.width / 2, clientY - r.top - r.height / 2);
+    return [this.cx + dx, this.cy + dy];
   }
 
   toScreen(x, y) {
     const r = this._rect();
-    return [r.left + r.width / 2 + (x - this.cx) * this.k, r.top + r.height / 2 + (y - this.cy) * this.k];
+    const [ox, oy] = this._w2s(x - this.cx, y - this.cy);
+    return [r.left + r.width / 2 + ox, r.top + r.height / 2 + oy];
+  }
+
+  // rotation du plan (degrés, sens horaire) ; numéros, noms de rues et pastilles redressés au-delà de 3° d'écart
+  setRotation(deg) {
+    let d = ((deg % 360) + 540) % 360 - 180;
+    if (Math.abs(d) < 0.5) d = 0;
+    if (d === this.rotDeg) return;
+    this.rotDeg = d;
+    this.rot = (d * Math.PI) / 180;
+    const diff = Math.abs(((d - this._textRot) % 360 + 540) % 360 - 180);
+    if (diff >= 3 || d === 0) this._uprightTexts();
+    this.setView(this.cx, this.cy, this.k);
+    this.emit('rotate', { deg: d });
+  }
+
+  _uprightTexts() {
+    const d = this.rotDeg;
+    this._textRot = d;
+    for (const [id, { num }] of this.addrEls) {
+      if (!d) num.removeAttribute('transform');
+      else {
+        const a = this.byId.get(id);
+        num.setAttribute('transform', `rotate(${(-d).toFixed(1)} ${a.x} ${a.y})`);
+      }
+    }
+    for (const lb of this.labelEls) {
+      // angle à l'écran ramené dans (-90°, 90°] : le nom se lit toujours de gauche à droite
+      let s = lb.a + d;
+      s = ((s % 360) + 540) % 360 - 180;
+      if (s > 90) s -= 180;
+      if (s <= -90) s += 180;
+      lb.el.setAttribute('transform', `translate(${lb.x} ${lb.y}) rotate(${(s - d).toFixed(1)})`);
+    }
+    for (const t of this.lRouteStops.querySelectorAll('.route-stop-num')) this._uprightOne(t);
+    this._updateTags();
+  }
+
+  _uprightOne(t) {
+    if (!this.rotDeg) t.removeAttribute('transform');
+    else t.setAttribute('transform', `rotate(${(-this.rotDeg).toFixed(1)} ${t.getAttribute('x')} ${t.getAttribute('y')})`);
   }
 
   _set(cx, cy, k) {
@@ -243,6 +306,8 @@ export class MapView {
     const w = r.width / this.k;
     const h = r.height / this.k;
     this.svg.setAttribute('viewBox', `${this.cx - w / 2} ${this.cy - h / 2} ${w} ${h}`);
+    if (this.rotDeg) this.root.setAttribute('transform', `rotate(${this.rotDeg.toFixed(2)} ${this.cx.toFixed(2)} ${this.cy.toFixed(2)})`);
+    else this.root.removeAttribute('transform');
     if (this.k !== this._lastK) {
       this._lastK = this.k;
       this._applyScale();
@@ -273,11 +338,13 @@ export class MapView {
     const r = this._rect();
     const ox = clientX - r.left - r.width / 2;
     const oy = clientY - r.top - r.height / 2;
-    const mx = this.cx + ox / this.k;
-    const my = this.cy + oy / this.k;
+    const [ax, ay] = this._s2w(ox, oy);
+    const mx = this.cx + ax;
+    const my = this.cy + ay;
     const k = clamp(this.k * factor, this.kMin, K_MAX);
-    if (animate) this.animateTo(mx - ox / k, my - oy / k, k);
-    else this.setView(mx - ox / k, my - oy / k, k);
+    const [bx, by] = this._s2w(ox, oy, k);
+    if (animate) this.animateTo(mx - bx, my - by, k);
+    else this.setView(mx - bx, my - by, k);
   }
 
   // zoom centré sur la zone visible (hors panneaux)
@@ -295,8 +362,9 @@ export class MapView {
     const aw = Math.max(60, r.width - p.left - p.right - 2 * margin);
     const ah = Math.max(60, r.height - p.top - p.bottom - 2 * margin);
     const k = clamp(Math.min(aw / bw, ah / bh), this.kMin, K_MAX);
-    const cx = (minx + maxx) / 2 - (p.left - p.right) / 2 / k;
-    const cy = (miny + maxy) / 2 - (p.top - p.bottom) / 2 / k;
+    const [ox, oy] = this._s2w((p.left - p.right) / 2, (p.top - p.bottom) / 2, k);
+    const cx = (minx + maxx) / 2 - ox;
+    const cy = (miny + maxy) / 2 - oy;
     if (animate) this.animateTo(cx, cy, k);
     else this.setView(cx, cy, k);
   }
@@ -312,15 +380,19 @@ export class MapView {
     const maxY = r.bottom - Math.max(p.bottom, bottom) - margin;
     const dx = sx < minX ? sx - minX : sx > maxX ? sx - maxX : 0;
     const dy = sy < minY ? sy - minY : sy > maxY ? sy - maxY : 0;
-    if (dx || dy) this.animateTo(this.cx + dx / this.k, this.cy + dy / this.k, this.k, 250);
+    if (dx || dy) {
+      const [wx, wy] = this._s2w(dx, dy);
+      this.animateTo(this.cx + wx, this.cy + wy, this.k, 250);
+    }
   }
 
   // centre (x, y) dans la zone visible ; zoom porté au moins à minK
   centerOn(x, y, { minK = 0, animate = true, ms = 300 } = {}) {
     const k = Math.max(this.k, minK);
     const p = this.padding;
-    const cx = x - (p.left - p.right) / 2 / k;
-    const cy = y - (p.top - p.bottom) / 2 / k;
+    const [ox, oy] = this._s2w((p.left - p.right) / 2, (p.top - p.bottom) / 2, k);
+    const cx = x - ox;
+    const cy = y - oy;
     if (animate) this.animateTo(cx, cy, k, ms);
     else this.setView(cx, cy, k);
   }
@@ -439,7 +511,9 @@ export class MapView {
       const dot = `M${s.x} ${s.y}h0.01`;
       el('path', { class: 'route-stop-ring', d: dot }, g);
       el('path', { class: 'route-stop-dot', d: dot }, g);
-      el('text', { class: 'route-stop-num', x: s.x, y: s.y }, g).textContent = s.label;
+      const t = el('text', { class: 'route-stop-num', x: s.x, y: s.y }, g);
+      t.textContent = s.label;
+      if (this.rotDeg) this._uprightOne(t);
     }
   }
 
@@ -450,8 +524,8 @@ export class MapView {
   }
 
   _updateTags() {
-    const off = 10 / this.k;
-    const d = this.tagged.map((p) => `M${(p.x + off).toFixed(2)} ${(p.y - off).toFixed(2)}h0.01`).join('');
+    const [ox, oy] = this._s2w(10, -10);  // en haut à droite du numéro, à l'écran
+    const d = this.tagged.map((p) => `M${(p.x + ox).toFixed(2)} ${(p.y + oy).toFixed(2)}h0.01`).join('');
     this.tagRing.setAttribute('d', d);
     this.tagDot.setAttribute('d', d);
   }
@@ -574,7 +648,8 @@ export class MapView {
   }
 
   _pan(dx, dy) {
-    this.setView(this.cx - dx / this.k, this.cy - dy / this.k, this.k);
+    const [wx, wy] = this._s2w(dx, dy);
+    this.setView(this.cx - wx, this.cy - wy, this.k);
   }
 
   _pinchMove() {
@@ -584,7 +659,8 @@ export class MapView {
     const ox = (a.x + b.x) / 2 - r.left - r.width / 2;
     const oy = (a.y + b.y) / 2 - r.top - r.height / 2;
     const k = clamp(this.pinch.k0 * (d / this.pinch.d0), this.kMin, K_MAX);
-    this.setView(this.pinch.ax - ox / k, this.pinch.ay - oy / k, k);
+    const [wx, wy] = this._s2w(ox, oy, k);
+    this.setView(this.pinch.ax - wx, this.pinch.ay - wy, k);
   }
 
   _up(e, cancelled) {

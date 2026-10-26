@@ -213,3 +213,104 @@ test('simulation : la position avance seule, pause, vitesse, arrêt suivant et p
   await expect(page.locator('#nav-start-label')).toHaveText('Démarrer');  // une simulation ne laisse pas de reprise
   expect(errors).toEqual([]);
 });
+
+// ------------------------------------------------------------- voix et carte orientée (I6)
+
+const spoken = (page) => page.evaluate(() => window.neyronApp.voice.spoken.slice());
+
+test('consignes vocales : démarrage, virage annoncé à l\'approche, arrivée, repère, sourdine', async ({ page }) => {
+  await openApp(page);
+  // synthèse vocale simulée (le navigateur de test n'a pas de voix) : on garde le journal des annonces de l'app
+  await page.evaluate(() => {
+    const v = window.neyronApp.voice;
+    v.synth = { speak() {}, cancel() {}, getVoices: () => [] };
+    window.SpeechSynthesisUtterance ??= class { constructor(t) { this.text = t; } };
+  });
+  await startNav(page);
+  expect((await spoken(page))[0]).toMatch(/^Tournée démarrée\. Arrêt 1, /);
+  const [x, y] = await stopPoint(page);
+  await simulate(page, x + 120, y + 90);
+  await expect.poll(async () => (await nav(page)).total).not.toBeNull();
+  // juste avant la première consigne du trajet : annoncée une seule fois
+  const m = await page.evaluate(() => {
+    const { nav } = window.neyronApp;
+    const man = nav.leg.maneuvers[0];
+    return man ? { at: man.at, total: nav.leg.total } : null;
+  });
+  if (m) {
+    const [px, py] = await page.evaluate((d) => {
+      const leg = window.neyronApp.nav.leg;
+      let k = 1;
+      while (k < leg.cum.length - 1 && leg.cum[k] < d) k += 1;
+      const f = (d - leg.cum[k - 1]) / (leg.cum[k] - leg.cum[k - 1] || 1);
+      return [leg.pts[k - 1].x + f * (leg.pts[k].x - leg.pts[k - 1].x), leg.pts[k - 1].y + f * (leg.pts[k].y - leg.pts[k - 1].y)];
+    }, Math.max(0, m.at - 12));
+    await simulate(page, px, py);
+    await expect.poll(async () => (await spoken(page)).some((t) => /^(Tournez|Légèrement|Continuez|Au rond-point|Faites|Dans)/.test(t))).toBe(true);
+    const n = (await spoken(page)).length;
+    await simulate(page, px + 0.5, py + 0.5);
+    expect((await spoken(page)).length).toBe(n);
+  }
+  await simulate(page, x + 2, y + 2);
+  await expect.poll(async () => (await spoken(page)).some((t) => t.startsWith('Arrêt 1. '))).toBe(true);
+
+  // repère sur l'arrêt suivant : annoncé à voix haute
+  const ids = await page.evaluate(() => window.neyronApp.nav.stops.map((s) => s.ids));
+  await page.evaluate((id) => window.neyronApp.store.setTags(id, ['chien']), ids[1][0]);
+  await page.evaluate((list) => window.neyronApp.store.setStatus(list, 'fait'), ids[0]);
+  await expect.poll(async () => (await spoken(page)).some((t) => t.startsWith('Attention, ') && t.endsWith(' : Chien'))).toBe(true);
+
+  // sourdine : plus aucune annonce
+  await page.click('#nav-voice');
+  await expect(page.locator('#nav-voice')).toHaveAttribute('aria-pressed', 'false');
+  const n2 = (await spoken(page)).length;
+  await page.evaluate((list) => window.neyronApp.store.setStatus(list, 'fait'), ids[1]);
+  await page.waitForTimeout(700);
+  expect((await spoken(page)).length).toBe(n2);
+});
+
+test('carte orientée : le trajet pointe vers le haut, numéros droits, tap juste ; boussole ; nord à la fin', async ({ page }) => {
+  await openApp(page);
+  await startNav(page);
+  const [x, y] = await stopPoint(page);
+  await simulate(page, x + 120, y + 90);
+  await expect.poll(async () => (await nav(page)).total).not.toBeNull();
+  await expect(page.locator('#btn-north')).toBeVisible();
+  // le cap du trajet à venir pointe vers le haut de l'écran
+  const r = await page.evaluate(() => {
+    const { map, nav } = window.neyronApp;
+    const h = nav._heading();
+    const a = map.toScreen(0, 0);
+    const b = map.toScreen(Math.cos(h) * 100, Math.sin(h) * 100);
+    const num = map.addrEls.values().next().value.num.getAttribute('transform');
+    return { rot: map.rotDeg, dx: b[0] - a[0], dy: b[1] - a[1], num };
+  });
+  expect(r.dy).toBeLessThan(-0.9 * Math.hypot(r.dx, r.dy));  // vers le haut, à 25° près
+  if (Math.abs(r.rot) > 3) expect(r.num).toMatch(/^rotate\(/);
+  // un toucher sur un numéro ouvre toujours la bonne adresse, plan tourné
+  const id = await page.evaluate(() => window.neyronApp.nav.stops[0].ids[0]);
+  const [sx, sy] = await page.evaluate((id) => {
+    const { map } = window.neyronApp;
+    const a = map.byId.get(id);
+    map._stopAnim();
+    map.setView(a.x, a.y, 3);
+    map.centerOn(a.x, a.y, { minK: 3, animate: false });
+    return map.toScreen(a.x, a.y);
+  }, id);
+  await page.mouse.click(sx, sy);
+  await expect(page.locator('#sheet')).toBeVisible();
+  expect(await page.evaluate(() => window.neyronApp.ui.sheetAddress?.id)).toBe(id);
+  await page.click('#btn-sheet-close');
+  // boussole : nord en haut, numéros sans rotation
+  await page.click('#btn-north');
+  await expect(page.locator('#btn-north')).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate(() => window.neyronApp.map.rotDeg)).toBe(0);
+  expect(await page.evaluate(() => window.neyronApp.map.addrEls.values().next().value.num.getAttribute('transform'))).toBeNull();
+  await page.click('#btn-north');
+  await expect(page.locator('#btn-north')).toHaveAttribute('aria-pressed', 'true');
+  // fin de la navigation : nord en haut, boussole masquée
+  await page.click('#nav-stop');
+  await page.locator('#as-list .as-btn', { hasText: 'Terminer la tournée' }).click();
+  expect(await page.evaluate(() => window.neyronApp.map.rotDeg)).toBe(0);
+  await expect(page.locator('#btn-north')).toBeHidden();
+});

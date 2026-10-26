@@ -16,6 +16,7 @@ import { RouteView } from './views/route.js';
 import { TagsView } from './views/tags.js';
 import { NavigateView } from './views/navigate.js';
 import { TagAlerts } from './tag-alerts.js';
+import { Voice } from './voice.js';
 import { WakeLockController } from './wakelock.js';
 
 async function loadJSON(url) {
@@ -43,6 +44,7 @@ async function start() {
     const tabs = new TabBar({ ui, panel });
     const app = { map, ui, data, store, gps, wake, backup, versions, tabs, panel };
     app.alerts = new TagAlerts(app);
+    app.voice = new Voice();
     app.route = new RouteView(app);
     app.prepare = new PrepareView(app);
     app.distribute = new DistributeView(app);

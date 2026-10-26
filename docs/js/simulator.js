@@ -3,21 +3,12 @@
 // Pause, vitesse ×1 / ×2 / ×4 / ×8. La position passe par gps.simulate, comme celle du panneau debug : la navigation,
 // les alertes des repères et le point sur le plan réagissent comme avec le vrai GPS.
 
+import { pointAlong } from './guidance.js';
+
 const $ = (id) => document.getElementById(id);
 const TICK_MS = 200;
 export const SPEEDS = [1, 2, 4, 8];
 const KMH = { car: 30, bike: 15 };  // vitesse moyenne simulée (à pied : vitesse de marche des réglages)
-
-// point à l'abscisse d le long d'un trajet (guidance.buildLeg)
-function pointAlong(leg, d) {
-  const { pts, cum } = leg;
-  if (d <= 0) return pts[0];
-  let k = 1;
-  while (k < cum.length - 1 && cum[k] < d) k += 1;
-  const seg = cum[k] - cum[k - 1] || 1;
-  const f = Math.min(1, (d - cum[k - 1]) / seg);
-  return { x: pts[k - 1].x + f * (pts[k].x - pts[k - 1].x), y: pts[k - 1].y + f * (pts[k].y - pts[k - 1].y) };
-}
 
 export class Simulator {
   constructor(nav) {

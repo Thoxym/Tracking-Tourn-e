@@ -603,7 +603,24 @@ Pourquoi pas Dijkstra seul : il donne le plus court chemin entre deux points. L'
     - simulation : vitesses, défilement seul, pause (position figée), arrêts suivant et précédent, journal vide, plan rendu aux statuts réels.
 
     Audit des cibles étendu à « Quitter la tournée » et à la capsule de simulation.
-- [ ] **I6 — Voix et carte orientée** : `speechSynthesis`, rotation de la carte, repli « nord en haut ».
+- [x] **I6 — Voix et carte orientée** ✅ (25/10/2026).
+  - **Voix** (`js/voice.js`, `Voice`) :
+    - `speechSynthesis` en `fr-FR` (voix locale de préférence, sans réseau) ;
+    - débloquée par le toucher sur Démarrer ou Simuler : première annonce « Tournée démarrée. Arrêt 1, rue » ;
+    - **virages** annoncés à l'approche, une seule fois par seuil : voiture 300, 100 et 25 m ; vélo 150, 40 et 15 m ; à pied 40 et 10 m. « Dans 100 m, tournez à droite sur … » ; au dernier seuil, la consigne seule. Une annonce remplace la précédente (`interrupt`) ; les seuils déjà dépassés ne sont pas annoncés en retard ;
+    - **arrivée** : « Arrêt 3. 125, 127, 129 à droite, puis 144 bis, 144 à gauche. » ;
+    - **repères** pendant la navigation : « Attention, 12 Rue de la Gare : Chien » (`TagAlerts.onAlert`) ;
+    - bouton haut-parleur dans la feuille de navigation (sourdine), préférence d'appareil `neyron-tournees.voice` ; journal des 50 dernières annonces (`voice.spoken`, tests).
+  - **Carte orientée** (`map.setRotation`) : un groupe racine `g.root` tourne autour du centre de la vue (`rotate(θ cx cy)`).
+    - Conversions écran <-> plan (`_s2w`, `_w2s`) utilisées par `toWorld`, `toScreen`, le glisser, le pincement, la molette, `zoomAt`, `fitBounds`, `centerOn` et `ensureVisible` ; un toucher sur un numéro reste juste.
+    - Numéros, pastilles d'arrêt et noms de rues redressés, ces derniers toujours lisibles de gauche à droite (`_uprightTexts`, au-delà de 3° d'écart, 1,7 ms) ; pastilles de repère décalées à l'écran.
+    - En navigation, le trajet à venir (20 m devant la position sur le trajet, sinon le cap de marche) pointe vers le haut, mis à jour au-delà de 8° d'écart.
+    - **Boussole** (bouton rond sous la colonne de droite, aiguille rouge qui tourne avec le plan) : nord en haut ou carte orientée, préférence `neyron-tournees.headup`. Nord en haut et boussole masquée à la fin de la navigation.
+    - **Coût** : sous WebKit Windows (rendu logiciel), une image avec le plan tourné coûte autant qu'une image nord en haut. À confirmer sur l'iPhone.
+  - En navigation, la marge haute de la carte passe sous le bandeau de consigne (et la capsule de simulation) : la position reste visible (`ui.updatePadding`).
+  - **Tests** (`tests/guidage.spec.js`) :
+    - voix : démarrage, virage annoncé une fois à l'approche, arrivée, repère, sourdine ;
+    - carte orientée : trajet vers le haut, numéros redressés, toucher juste avec le plan tourné, boussole, nord à la fin.
 - [ ] **I7 — Robustesse** : tests de guidage et de repères, performance sur la commune entière, hors ligne, RGPD (§13), documentation.
 
 ---
@@ -718,7 +735,7 @@ neyron-tournees/
 │   ├── js/               # main.js, map.js, store.js, gps.js, ui.js, wakelock.js, io.js, debug.js, pwa.js, theme-init.js,
 │   │                     #   tabs.js, sheet.js, tourplan.js, report.js, views/ (prepare.js, distribute.js, control.js, common.js) — branche facteur
 │   │                     #   routing.js, itinerary.js, route-worker.js, route-client.js, roads.js, views/route.js — itinéraire (§2 quater)
-│   │                     #   tag-alerts.js, views/tags.js — repères d'adresse ; guidance.js, views/navigate.js, simulator.js — navigation
+│   │                     #   tag-alerts.js, views/tags.js — repères d'adresse ; guidance.js, views/navigate.js, simulator.js, voice.js — navigation
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, roads.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
@@ -1119,7 +1136,7 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
 | Sauvegarde JSON | partagée à la main | tout le journal horodaté, identifiant d'appareil aléatoire | mention « à garder pour vous, ce n'est pas un rapport » |
 | Position GPS | mémoire seulement | — | jamais stockée ni exportée ; masquée dans le diagnostic copié |
 | Repères d'adresse (I4) | `meta.tags`, sur l'appareil ; sauvegarde | 8 codes fermés (« chien »…) et une note de 60 caractères au plus, par adresse | foyer identifiable : avertissement sous la note (rien sur les personnes, aucun code d'accès) ; **jamais dans le rapport** ; liste à revoir et « Tout supprimer » dans Préparer › Repères |
-| Préférences (`localStorage`) | appareil | thème, onglet, réglages de charge, heures du rapport, tournée en pause (id de tournée et numéro d'arrêt, I5 bis) | aucune donnée personnelle |
+| Préférences (`localStorage`) | appareil | thème, onglet, réglages de charge, heures du rapport, tournée en pause (id de tournée et numéro d'arrêt, I5 bis), voix et carte orientée (I6) | aucune donnée personnelle |
 
 - Aucun flux réseau nouveau : CSP inchangée, aucun service tiers, tout reste sur l'appareil.
 - **Conservation limitée** (validée le 25/10/2026) : `store.purge()` efface, à chaque lancement et après chaque import, les événements antérieurs à la dernière clôture de plus de **60 jours** de chaque tournée (`RETENTION_DAYS`, durée recommandée par la CNIL pour le suivi d'activité d'un salarié).
@@ -1254,3 +1271,7 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - « Quitter » propose la pause (reprise à l'arrêt mémorisé, même après une relance) ou la fin ;
   - la reprise est une préférence d'appareil (`localStorage`), comme l'onglet : elle ne voyage pas avec la sauvegarde ;
   - la simulation passe par la même vue et la même source de position que le GPS, sans rien écrire dans le journal.
+- **25/10/2026** — Commit `2f36d55` (I5 bis). I6 :
+  - rotation par un groupe SVG racine plutôt qu'une rotation CSS du conteneur : les gestes, le toucher et les cadrages restent exacts, et les textes se redressent un à un ;
+  - cap tiré du trajet à venir plutôt que de la boussole de l'iPhone (pas de permission à demander, pas d'affolement à l'arrêt) ;
+  - voix du système, hors ligne, avec une annonce par seuil ; repères annoncés seulement pendant la navigation.

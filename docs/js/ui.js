@@ -330,7 +330,10 @@ export class UI {
   // feuille (en bas au téléphone, à gauche sur grand écran)
   updatePadding() {
     const r = this.map.container.getBoundingClientRect();
-    const top = Math.max(0, $('btn-undo').getBoundingClientRect().bottom - r.top);
+    // navigation : sous le bandeau de consigne (et la capsule de simulation), sinon sous le bouton Annuler
+    const bottoms = ['btn-undo', 'nav-banner', 'sim-bar'].map((id) => $(id))
+      .filter((el) => !el.hidden && el.offsetParent !== null).map((el) => el.getBoundingClientRect().bottom);
+    const top = Math.max(0, Math.max(...bottoms) - r.top);
     this.map.setPadding({ top, left: this.panel.coveredLeft(), right: 0, bottom: this.panel.covered() });
   }
 

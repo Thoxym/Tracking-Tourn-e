@@ -5,12 +5,14 @@
 // - Plan : suivi de la position (GPS), trajet jusqu'à l'arrêt en gras, suite de l'itinéraire, arrêts numérotés.
 // - Hors itinéraire (écart au tracé pendant quelques secondes, position précise) : nouveau trajet jusqu'à l'arrêt.
 // La source de position est le GPS (ou une position simulée : panneau debug, simulation de tournée).
+// Voix (js/voice.js) : consignes à l'approche des virages (seuils selon le mode), arrivée à l'arrêt, repères.
+// Carte orientée : le plan tourne pour que le trajet à venir pointe vers le haut ; la boussole revient au nord.
 // Quitter : mettre en pause (l'arrêt en cours est mémorisé, « Reprendre » dans Distribuer, même après une relance)
 // ou terminer. Simulation : même vue, position qui avance seule le long de l'itinéraire (js/simulator.js), statuts
 // gardés en mémoire seulement : le journal, l'annulation et le rapport ne sont pas touchés.
 
 import { evaluateStops, planContext, routeLines } from '../itinerary.js';
-import { buildLeg, formatDist, instruction, locate, nextManeuver, reroute } from '../guidance.js';
+import { buildLeg, formatDist, instruction, locate, nextManeuver, pointAlong, reroute } from '../guidance.js';
 import { loadRoads } from '../roads.js';
 import { ST_AGAIN, ST_ANOMALY, ST_DONE, isTreated } from '../store.js';
 import { formatDuration } from '../tourplan.js';
@@ -25,6 +27,8 @@ const ARRIVE_M = { car: 30, bike: 25, foot: 20 };
 const MAX_ACC_M = 25;
 const LOCK_MS = 500;
 const STATUS_TEXT = { [ST_DONE]: 'distribuée', [ST_ANOMALY]: 'anomalie', [ST_AGAIN]: 'à repasser' };
+const VOICE_AT = { car: [300, 100, 25], bike: [150, 40, 15], foot: [40, 10] };  // annonces avant un virage (m)
+const HEADUP_KEY = 'neyron-tournees.headup';
 const SESSION_KEY = 'neyron-tournees.nav';  // tournée en cours de guidage : {tour, k, at} (préférence d'appareil)
 
 function readSession() {
@@ -97,6 +101,10 @@ export class NavigateView {
     this.sim = false;         // simulation en cours
     this.simState = new Map(); // statuts simulés (mémoire seulement)
     this.session = readSession();
+    this.voice = app.voice;
+    let headUp = null;
+    try { headUp = localStorage.getItem(HEADUP_KEY); } catch { /* stockage indisponible */ }
+    this.headUp = headUp !== 'off';
     guard(this, ['startFlow', 'pickTour', 'start', 'stopFlow', 'skip', 'allDone', 'act', 'more', 'simulate']);
     $('nav-start').addEventListener('click', () => this.startFlow());
     $('nav-sim').addEventListener('click', () => this.simulate());
@@ -105,6 +113,10 @@ export class NavigateView {
     $('sim-prev').addEventListener('click', () => this.simPrev());
     $('sim-speed').addEventListener('click', () => this.simulator?.cycleSpeed());
     $('sim-quit').addEventListener('click', () => this.stop('sim'));
+    $('nav-voice').addEventListener('click', () => this.toggleVoice());
+    $('btn-north').addEventListener('click', () => this.toggleHeadUp());
+    app.map.on('rotate', ({ deg }) => { $('btn-north').querySelector('.ico').style.transform = `rotate(${deg}deg)`; });
+    app.alerts?.onAlert(({ label, text }) => { if (this.active) this.voice?.say(`Attention, ${label} : ${text}`); });
     $('dist-tour').addEventListener('click', () => this.pickTour());
     $('nav-stop').addEventListener('click', () => this.stopFlow());
     $('nav-skip').addEventListener('click', () => this.skip());
@@ -246,8 +258,14 @@ export class NavigateView {
       if (gps.mode === 'off') gps.start();
       gps.setMode('follow');
     }
+    this.spokenStop = -1;
+    $('btn-north').hidden = false;
+    ui.updatePadding();
+    $('nav-voice').hidden = !this.voice?.supported;
+    this._renderToggles();
     panel.show(this.view, 'peek');
     this._goto(k, { fromRoute: true });
+    this.voice?.say(`${sim ? 'Simulation' : 'Tournée'} démarrée. Arrêt ${k + 1}, ${this._streetName(this.stops[k])}.`, { interrupt: true });
     if (sim) {
       this.simulator.start(k);
       ui.toast('Simulation : rien n\'est enregistré dans la tournée.', { ms: 3000 });
@@ -290,6 +308,9 @@ export class NavigateView {
     delete $('app').dataset.sim;
     $('nav-banner').hidden = true;
     $('sim-bar').hidden = true;
+    $('btn-north').hidden = true;
+    map.setRotation(0);
+    this.voice?.stop();
     map.setRoute(null);
     if (gps.mode === 'follow') gps.setMode('on');
     panel.show(tabs.view());
@@ -337,6 +358,70 @@ export class NavigateView {
     this.leg = arcs?.length ? buildLeg(this.g, arcs, this.mode) : null;
     this.along = null;
     this.offSince = 0;
+    this.legId = (this.legId || 0) + 1;
+    this.spoken = new Set();
+    this._updateRotation();
+  }
+
+  // ------------------------------------------------- voix, carte orientée
+
+  toggleVoice() {
+    this.voice.setEnabled(!this.voice.enabled);
+    this._renderToggles();
+    this.app.ui.toast(this.voice.enabled ? 'Consignes vocales activées' : 'Consignes vocales coupées', { ms: 1800 });
+  }
+
+  toggleHeadUp() {
+    this.headUp = !this.headUp;
+    try { localStorage.setItem(HEADUP_KEY, this.headUp ? 'on' : 'off'); } catch { /* préférence de session */ }
+    if (this.headUp) this._updateRotation(true);
+    else this.app.map.setRotation(0);
+    this._renderToggles();
+  }
+
+  _renderToggles() {
+    $('nav-voice').setAttribute('aria-pressed', String(Boolean(this.voice?.enabled)));
+    $('nav-voice').setAttribute('aria-label', this.voice?.enabled ? 'Couper les consignes vocales' : 'Activer les consignes vocales');
+    $('nav-voice').classList.toggle('off', !this.voice?.enabled);
+    $('btn-north').setAttribute('aria-pressed', String(this.headUp));
+    $('btn-north').setAttribute('aria-label', this.headUp ? 'Carte orientée : revenir au nord en haut' : 'Orienter la carte dans le sens de la marche');
+  }
+
+  // cap du trajet à venir (20 m devant la position sur le trajet), sinon cap de marche ; radians, repère SVG
+  _heading() {
+    const leg = this.leg;
+    if (leg && leg.pts.length > 1) {
+      const d0 = this.along ?? 0;
+      const a = pointAlong(leg, d0);
+      const b = pointAlong(leg, Math.min(leg.total, d0 + 20));
+      if (Math.hypot(b.x - a.x, b.y - a.y) > 2) return Math.atan2(b.y - a.y, b.x - a.x);
+    }
+    return this.heading;
+  }
+
+  // le trajet à venir pointe vers le haut de l'écran (rotation mise à jour au-delà de 8° d'écart)
+  _updateRotation(force = false) {
+    if (!this.active || !this.headUp) return;
+    const h = this._heading();
+    if (h === null || h === undefined) return;
+    const target = -90 - (h * 180) / Math.PI;
+    const diff = Math.abs((((target - this.app.map.rotDeg) % 360) + 540) % 360 - 180);
+    if (force || diff >= 8) this.app.map.setRotation(target);
+  }
+
+  // annonce vocale de la consigne : à chaque seuil franchi (une fois), la plus proche seulement
+  _speakManeuver(m) {
+    if (!this.voice?.enabled || m.type === 'arrive') return;
+    const at = VOICE_AT[this.mode] || VOICE_AT.car;
+    const band = [...at].reverse().find((t) => m.dist <= t);
+    if (band === undefined) return;
+    const key = `${this.legId}|${Math.round(m.at)}|${band}`;
+    if (this.spoken.has(key)) return;
+    // seuils plus lointains de la même consigne : déjà dépassés, pas d'annonce en retard
+    for (const t of at) if (t >= band) this.spoken.add(`${this.legId}|${Math.round(m.at)}|${t}`);
+    const text = instruction(m);
+    const closest = band === at[at.length - 1];
+    this.voice.say(closest ? text : `Dans ${formatDist(m.dist)}, ${text.charAt(0).toLowerCase()}${text.slice(1)}`, { interrupt: true });
   }
 
   _reroute() {
@@ -494,6 +579,7 @@ export class NavigateView {
     }
     const s = this.stops[this.k];
     if (Math.hypot(s.x - pos.x, s.y - pos.y) <= ARRIVE_M[this.mode]) this.arrived = true;
+    this._updateRotation();
     this.renderBanner();
     this._renderSub();
   }
@@ -537,6 +623,10 @@ export class NavigateView {
     $('nav-dist').textContent = dist;
     $('nav-instr').textContent = text;
     this.maneuver = m;
+    if (m.type === 'arrive' && dist === `Arrêt ${this.k + 1}` && this.spokenStop !== this.k && (this.arrived || this.leg)) {
+      this.spokenStop = this.k;
+      this.voice?.say(`Arrêt ${this.k + 1}. ${this._stopSummary(s).replace(' · ', ', puis ')}.`, { interrupt: true });
+    } else if (m.type !== 'arrive') this._speakManeuver(m);
   }
 
   // temps restant : arrêts encore à servir (trajet + part du service)

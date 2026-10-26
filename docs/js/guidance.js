@@ -128,6 +128,17 @@ export function instruction(m, stop = '') {
   }
 }
 
+// point à l'abscisse d le long d'un trajet
+export function pointAlong(leg, d) {
+  const { pts, cum } = leg;
+  if (d <= 0 || pts.length < 2) return pts[0];
+  let k = 1;
+  while (k < cum.length - 1 && cum[k] < d) k += 1;
+  const seg = cum[k] - cum[k - 1] || 1;
+  const f = Math.min(1, (d - cum[k - 1]) / seg);
+  return { x: pts[k - 1].x + f * (pts[k].x - pts[k - 1].x), y: pts[k - 1].y + f * (pts[k].y - pts[k - 1].y) };
+}
+
 // distance arrondie pour l'affichage : « 80 m », « 1,2 km »
 export function formatDist(m) {
   if (m < 1000) return `${Math.max(0, Math.round(m / 10) * 10)} m`;
