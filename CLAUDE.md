@@ -339,6 +339,7 @@ npx playwright test                                 # tests (serveur lancé par 
 - [x] **L8 — Déploiement de la branche** (26/10/2026, accord de l'utilisateur).
   - **Canal** : `main` avance jusqu'à la branche (avance rapide, sans réécriture), Pages inchangé (`main`, `/docs`), même URL. L'app installée voit la mise à jour (bandeau « Recharger ») et reprend la progression v0.1 dans la tournée « Neyron — 10 rues » (migration L3). La v0.1 reste accessible par son commit (`4a13e70`).
   - **Branche renommée** `dev_tournees` (l'ancien nom citait une marque) ; l'ancienne branche est supprimée sur GitHub. Les anciennes versions de ce fichier dans l'historique gardent l'ancien nom (pas de réécriture : `main` est protégée contre le force-push).
+  - En ligne en 2 min (`8197ea0`, app `da007751`). **Tests contre le site en ligne** (`BASE_URL`) : 162 réussis, 5 ignorés, 3 tests WebKit réussis au second essai (délai dépassé au premier, machine chargée).
   - Reste : essai sur l'iPhone (§3 et guidage en conditions réelles), par l'utilisateur.
 
 **À valider par l'utilisateur** :
