@@ -739,14 +739,34 @@ function describe(ctx, pb, opts, units, seq, extra) {
 
 // trajets et totaux d'une suite d'arrêts (calculée, ou retouchée à la main) ; chaque arrêt reçoit le temps et la
 // distance du trajet qui y mène (legSec, legM)
+// trajets déjà calculés, par réseau et par jeu de coûts : une retouche (Monter, Fusionner…) ne recalcule que les
+// trajets qui changent, au lieu d'une recherche par arrêt (≈ 1 s pour 400 arrêts sous WebKit)
+const LEG_CACHE = new WeakMap();
+const LEG_CACHE_MAX = 5000;
+
+function legCache(ctx) {
+  let byCosts = LEG_CACHE.get(ctx.g);
+  if (!byCosts) LEG_CACHE.set(ctx.g, (byCosts = new Map()));
+  const key = `${ctx.mode}|${ctx.st.walkKmh}|${ctx.st.bikeKmh}`;
+  let m = byCosts.get(key);
+  if (!m || m.size > LEG_CACHE_MAX) byCosts.set(key, (m = new Map()));
+  return m;
+}
+
 function evaluate(ctx, stops, start, end) {
   const { g } = ctx;
   const C = g.costs(ctx.mode, ctx.st);
+  const cache = legCache(ctx);
   const legOf = (from, toPos) => {
+    const key = `${from.arc}|${from.s}|${toPos.arc}|${toPos.s}`;
+    const hit = cache.get(key);
+    if (hit) return hit;
     const res = g.search(C, from, { pred: true });
     const path = g.pathTo(res, toPos) || [];
     const m = path.reduce((s, p) => s + Math.max(0, p.s1 - p.s0), 0);
-    return { arcs: path, sec: g.costTo(res, toPos), m };
+    const leg = { arcs: path, sec: g.costTo(res, toPos), m };
+    cache.set(key, leg);
+    return leg;
   };
   const best = (froms, to) => {
     let out = null;

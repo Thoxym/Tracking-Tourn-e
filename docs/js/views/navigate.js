@@ -643,11 +643,11 @@ export class NavigateView {
   _renderSub() {
     const s = this.stops[this.k];
     const far = this.pos ? Math.hypot(s.x - this.pos.x, s.y - this.pos.y) : null;
-    const sub = [this._streetName(s), far !== null ? `à ${formatDist(far)}` : '',
-      `≈ ${formatDuration(this.remaining())} restantes`].filter(Boolean).join(' · ');
+    const sub = [this._streetName(s), far === null ? '' : far < ARRIVE_M[this.mode] ? 'sur place' : formatDist(far)].filter(Boolean).join(' · ');
+    $('nav-left').textContent = `≈ ${formatDuration(this.remaining())} restantes`;
     if ($('nav-sub').textContent !== sub) {
       $('nav-sub').textContent = sub;
-      this.app.panel.layout();  // le sous-titre peut changer de nombre de lignes : petit cran recalculé
+      this.app.panel.layout();  // la rue peut changer de nombre de lignes : petit cran recalculé
     }
     // rejoindre le premier arrêt avec une autre app (loin, ou position inconnue)
     const join = !this.sim && this.k === this.startK && (far === null || far > 300);
@@ -703,8 +703,7 @@ export class NavigateView {
     }));
     const left = s.ids.filter((id) => !isTreated(this.status(id))).length;
     $('nav-all').disabled = !left;
-    $('nav-all').textContent = left > 1 ? `Tout l'arrêt distribué (${left})` : 'Distribué';
-    $('nav-all').hidden = left <= 1 && s.ids.length === 1;  // une seule adresse : le bouton de la ligne suffit
+    $('nav-all').setAttribute('aria-label', left ? `Tout l'arrêt distribué (${left} adresse${left > 1 ? 's' : ''})` : "Tout l'arrêt distribué");
     // arrêts suivants
     const next = [];
     for (let k = this.k + 1; k < this.stops.length && next.length < 3; k++) {

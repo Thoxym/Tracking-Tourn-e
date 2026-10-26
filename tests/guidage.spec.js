@@ -38,6 +38,23 @@ test('démarrer, consignes, arrivée, arrêt suivant automatique, annuler, saute
   await expect(page.locator('#nav-banner')).toBeVisible();
   await expect(page.locator('#nav-title')).toHaveText(`Arrêt 1/${n}`);
   await expect(page.locator('.l-route-stops .route-stop.current')).toHaveCount(1);
+  // feuille compacte : arrêt et temps restant en petit, la rue, puis les deux actions au petit cran ; adresses dessous,
+  // « Quitter la tournée » tout en bas
+  await expect(page.locator('#nav-left')).toHaveText(/^≈ .+ restantes$/);
+  const lay = await page.evaluate(() => {
+    const panel = document.getElementById('panel').getBoundingClientRect();
+    const acts = document.querySelector('.nav-acts').getBoundingClientRect();
+    const body = document.querySelector('#view-navigate .page-body');
+    const last = [...body.children].filter((el) => !el.hidden).pop();
+    return { panelTop: panel.top, panelH: panel.height, H: innerHeight, actsBottom: acts.bottom, actsTop: acts.top,
+      addrsTop: document.getElementById('nav-addrs').getBoundingClientRect().top, last: last.id };
+  });
+  expect(lay.actsTop).toBeGreaterThan(lay.panelTop);
+  expect(lay.actsBottom).toBeLessThanOrEqual(lay.panelTop + lay.panelH);
+  expect(lay.addrsTop).toBeGreaterThan(lay.actsBottom);
+  expect(lay.last).toBe('nav-stop');
+  if (test.info().project.name === 'webkit-iphone') expect(lay.panelH / lay.H).toBeLessThan(0.3);
+  await expect(page.locator('#nav-all')).toBeVisible();
   // pas encore de position : rejoindre l'arrêt, avec Plans / Waze
   await expect(page.locator('#nav-instr')).toContainText('Rejoignez l\'arrêt 1');
   await expect(page.locator('#nav-join')).toBeVisible();
@@ -221,11 +238,22 @@ const spoken = (page) => page.evaluate(() => window.neyronApp.voice.spoken.slice
 test('consignes vocales : démarrage, virage annoncé à l\'approche, arrivée, repère, sourdine', async ({ page }) => {
   await openApp(page);
   // synthèse vocale simulée (le navigateur de test n'a pas de voix) : on garde le journal des annonces de l'app
-  await page.evaluate(() => {
+  // seule une voix française locale est utilisée : une voix synthétisée sur un serveur recevrait adresses et repères
+  const support = await page.evaluate(() => {
     const v = window.neyronApp.voice;
-    v.synth = { speak() {}, cancel() {}, getVoices: () => [] };
     window.SpeechSynthesisUtterance ??= class { constructor(t) { this.text = t; } };
+    const remote = { lang: 'fr-FR', localService: false, name: 'Google français' };
+    v.synth = { speak() {}, cancel() {}, getVoices: () => [remote] };
+    v.pick();
+    const onlyRemote = v.supported;
+    v.synth.getVoices = () => [remote, { lang: 'fr-FR', localService: true, name: 'Amélie' }];
+    v.pick();
+    const local = v.voice?.name;
+    v.synth.getVoices = () => [];  // le navigateur de test n'a pas de voix : on garde le journal des annonces de l'app
+    v.pick();
+    return { onlyRemote, local, unlisted: v.supported };
   });
+  expect(support).toEqual({ onlyRemote: false, local: 'Amélie', unlisted: true });
   await startNav(page);
   expect((await spoken(page))[0]).toMatch(/^Tournée démarrée\. Arrêt 1, /);
   const [x, y] = await stopPoint(page);

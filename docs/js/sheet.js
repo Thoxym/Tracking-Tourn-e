@@ -126,7 +126,14 @@ export class Panel {
   heights() {
     const H = this.app.clientHeight;
     // grand cran : jusque sous la barre d'état (le bouton Annuler est à safe-area + 12 px du haut)
-    const top = document.getElementById('btn-undo').offsetTop;
+    let top = document.getElementById('btn-undo').offsetTop;
+    // navigation : le grand cran s'arrête sous le bandeau de consigne (et la capsule de simulation)
+    if (this.app.dataset.mode === 'nav') {
+      for (const id of ['nav-banner', 'sim-bar']) {
+        const el = document.getElementById(id);
+        if (el && !el.hidden) top = Math.max(top, el.offsetTop + el.offsetHeight + 12);
+      }
+    }
     const large = Math.round(H - 6 - Math.max(8, top - 4));
     let peek = 180;
     const page = this.view && this.page();

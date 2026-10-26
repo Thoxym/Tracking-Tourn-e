@@ -4,7 +4,7 @@ const net = require('net');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const { test, expect } = require('@playwright/test');
-const { PYTHON, DOCS, SERVE, ID, total, trackErrors, openApp, waitReady, statusOf } = require('./helpers');
+const { PYTHON, DOCS, SERVE, ID, total, trackErrors, openApp, openPage, waitReady, statusOf } = require('./helpers');
 
 const swVersion = (file) => fs.readFileSync(file, 'utf-8').match(/const VERSION = '(\w+)'/)[1];
 const precacheSize = () => fs.readFileSync(path.join(DOCS, 'sw.js'), 'utf-8')
@@ -55,6 +55,44 @@ test('hors ligne après une première visite : l\'app se charge et le pointage e
   await page.reload();
   await waitReady(page);
   expect(await statusOf(page, ID.gare28)).toBe('fait');
+  expect(errors).toEqual([]);
+});
+
+test('hors ligne : itinéraire calculé dans le worker, puis simulation de la tournée', async ({ page, context }) => {
+  const errors = trackErrors(page);
+  await openApp(page);
+  await waitControlled(page);
+  const version = swVersion(path.join(DOCS, 'sw.js'));
+  await expect.poll(() => caches(page)).toEqual({ [`neyron-tournees-${version}`]: precacheSize() });
+  await context.setOffline(true);
+  await page.reload();
+  await waitReady(page);
+
+  // le worker, ses modules et le réseau routier viennent du cache du service worker
+  await openPage(page, 'prepare', '#prep-route-row');
+  await page.click('#route-compute');
+  await expect(page.locator('#route-result')).toBeVisible({ timeout: 30_000 });
+  const stops = await page.evaluate(() => window.neyronApp.store.activeTour.route.stops.length);
+  expect(stops).toBeGreaterThan(10);
+  const fromCache = await page.evaluate(async (name) => {
+    const cache = await window.caches.open(name);
+    const out = {};
+    for (const f of ['js/route-worker.js', 'js/route-client.js', 'js/routing.js', 'js/itinerary.js', 'js/guidance.js', 'data/roads.json']) {
+      out[f] = Boolean(await cache.match(new URL(f, location.href).href));
+    }
+    return out;
+  }, `neyron-tournees-${version}`);
+  expect(Object.values(fromCache).every(Boolean), JSON.stringify(fromCache)).toBe(true);
+
+  // simulation hors ligne : la position avance, les arrêts sont servis
+  await page.click('#tabbar [data-tab="distribute"]');
+  await page.click('#nav-sim');
+  await expect(page.locator('#sim-bar')).toBeVisible();
+  await expect(page.locator('#nav-banner')).toBeVisible();
+  await page.evaluate(() => { window.neyronApp.nav.simulator.factor = 40; });
+  await expect.poll(() => page.evaluate(() => window.neyronApp.nav.k), { timeout: 30_000 }).toBeGreaterThan(0);
+  await page.click('#sim-quit');
+  await expect(page.locator('#tabbar')).toBeVisible();
   expect(errors).toEqual([]);
 });
 

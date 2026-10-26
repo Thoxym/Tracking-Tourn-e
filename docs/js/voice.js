@@ -1,6 +1,8 @@
 // Consignes vocales (navigation) : synthèse vocale du système (speechSynthesis), en français, sans réseau (voix de
 // l'iPhone). iOS n'autorise la parole qu'après un geste : la première annonce part du toucher sur « Démarrer ».
 // Préférence d'appareil : voix activée ou coupée.
+// Voix locales seulement : certaines voix de navigateur (Chrome de bureau) sont synthétisées sur un serveur, et les
+// annonces contiennent des adresses et les notes des repères. Sans voix française locale, pas de consigne vocale.
 
 const KEY = 'neyron-tournees.voice';
 
@@ -13,18 +15,22 @@ export class Voice {
     try { pref = localStorage.getItem(KEY); } catch { /* stockage indisponible */ }
     this.enabled = pref !== 'off';
     if (this.synth) {
-      const pick = () => {
-        const voices = this.synth.getVoices() || [];
-        this.voice = voices.find((v) => v.lang === 'fr-FR' && v.localService) || voices.find((v) => v.lang === 'fr-FR')
-          || voices.find((v) => v.lang?.startsWith('fr')) || null;
-      };
-      pick();
-      this.synth.addEventListener?.('voiceschanged', pick);
+      this.pick();
+      this.synth.addEventListener?.('voiceschanged', () => this.pick());
     }
   }
 
+  // voix française locale (jamais une voix synthétisée sur un serveur)
+  pick() {
+    const voices = this.synth?.getVoices() || [];
+    this.listed = voices.length > 0;
+    const local = voices.filter((v) => v.localService);
+    this.voice = local.find((v) => v.lang === 'fr-FR') || local.find((v) => /^fr/i.test(v.lang || '')) || null;
+  }
+
+  // liste des voix pas encore chargée : voix par défaut du système (Safari : toujours locale)
   get supported() {
-    return Boolean(this.synth) && typeof window.SpeechSynthesisUtterance === 'function';
+    return Boolean(this.synth) && typeof window.SpeechSynthesisUtterance === 'function' && (Boolean(this.voice) || !this.listed);
   }
 
   setEnabled(on) {

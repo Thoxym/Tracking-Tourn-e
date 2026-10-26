@@ -1439,7 +1439,16 @@ dialog { color: var(--text); }
 #nav-dist { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1.1; }
 #nav-instr { font-size: 15px; font-weight: 600; line-height: 1.25; }
 #app[data-mode="nav"] .toast { top: calc(var(--safe-t) + var(--edge) + 72px); }
-.nav-stop .btn-pair { margin-bottom: 16px; }
+#app[data-sim] .toast { top: calc(var(--safe-t) + var(--edge) + 160px); }
+/* feuille de navigation compacte : arrêt et temps restant en petit, la rue, puis les deux actions (petit cran) ;
+   les adresses, la suite et « Quitter » se découvrent en tirant la feuille */
+.nav-compact { padding: 14px 16px 8px 20px; min-height: 0; align-items: center; }
+.nav-kicker { font-size: 13px; font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#nav-left:not(:empty)::before { content: " · "; }
+.nav-street { margin-top: 1px; font-size: 19px; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.nav-acts { grid-template-columns: auto minmax(0, 1fr); margin-bottom: 14px; }
+.nav-acts .btn { padding: 0 16px; font-size: 16px; min-width: 0; }
+.nav-quit { margin-top: 4px; }
 .nav-addr { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 6px 8px 6px 16px; }
 .nav-addr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .nav-addr-name { font-size: 18px; font-weight: 600; }
@@ -1464,7 +1473,7 @@ dialog { color: var(--text); }
 .round-act.done { background: var(--fait); color: var(--on-status); }
 .round-act:disabled { opacity: 0.35; cursor: default; }
 .nav-addr .badge { flex: none; }
-.voice-btn { margin-right: 8px; }
+.voice-btn { margin-left: 4px; }
 .voice-btn .ico-off, .voice-btn.off .ico-on { display: none; }
 .voice-btn.off .ico-off { display: block; }
 .voice-btn.off { color: var(--text-2); }

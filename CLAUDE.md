@@ -621,7 +621,31 @@ Pourquoi pas Dijkstra seul : il donne le plus court chemin entre deux points. L'
   - **Tests** (`tests/guidage.spec.js`) :
     - voix : démarrage, virage annoncé une fois à l'approche, arrivée, repère, sourdine ;
     - carte orientée : trajet vers le haut, numéros redressés, toucher juste avec le plan tourné, boussole, nord à la fin.
-- [ ] **I7 — Robustesse** : tests de guidage et de repères, performance sur la commune entière, hors ligne, RGPD (§13), documentation.
+- [x] **I7 — Robustesse** ✅ (26/10/2026).
+  - **Feuille de navigation compacte** (demande de l'utilisateur, pour dégager le plan) :
+    - en-tête : « Arrêt k/N · ≈ durée restantes » en petit (`#nav-title`, `#nav-left`), puis la rue et la distance (« sur place » à l'arrivée) ;
+    - juste dessous, **Arrêt suivant** et **Tout l'arrêt distribué** (aussi pour un arrêt d'une seule adresse) : c'est l'élément `[data-peek]`, le petit cran s'arrête là (≈ 22 % de l'écran sur iPhone 13, contre ≈ 45 %) ;
+    - les adresses de l'arrêt, Plans / Waze, « Ensuite », puis **Quitter la tournée** tout en bas, en tirant la feuille ;
+    - en navigation, le grand cran s'arrête sous le bandeau de consigne et la capsule de simulation (`Panel.heights`) ; en simulation, les toasts passent sous la capsule.
+  - **Performance, commune entière** (941 adresses, budget de 2 s) :
+
+    | Mode | Arrêts | Durée (ordre par rues) | Calcul (worker) | 2e retouche | Démarrage |
+    |---|---|---|---|---|---|
+    | voiture | 297 | ≈ 16 h 49 (22 h 50) | 2,7 s | 0,2 s | 0,6 s |
+    | vélo | 401 | ≈ 14 h 36 (21 h 49) | 2,7 s | 0,2 s | 0,7 s |
+    | à pied | 124 portions | ≈ 15 h 43 (32 h 14) | 2,4 s | 0,2 s | 0,6 s |
+
+    WebKit Windows (rendu logiciel, machine chargée) ; Chromium 2 à 3 fois plus rapide sur le fil principal. Le fil principal reste disponible pendant le calcul (pause maximale de 0,2 s).
+    - **Trajets mis en mémoire** (`itinerary.evaluate`, par réseau et jeu de coûts, 5000 au plus) : une retouche ne recalcule que les trajets qui changent (avant : une recherche par arrêt, 1,2 s pour 401 arrêts).
+    - Une image de zoom avec l'itinéraire de toute la commune : 0,7 à 0,9 s sous WebKit logiciel, 0,05 à 0,14 s sous Chromium. À juger sur l'iPhone (rendu matériel) ; une tournée réelle est bien plus petite.
+  - **Hors ligne** (`hors-ligne.spec.js`) : après une première visite, réseau coupé, l'itinéraire se calcule dans le worker (modules et `roads.json` servis par le cache du service worker), puis la simulation tourne et sert les arrêts.
+  - **RGPD** (§13) :
+    - **voix locales seulement** : certaines voix de navigateur (Chrome de bureau) sont synthétisées sur un serveur, alors que les annonces contiennent des adresses et les notes des repères. `Voice.pick` ne garde que les voix `localService` françaises ; sans elle, pas de consigne vocale (bouton masqué). Liste des voix pas encore chargée : voix par défaut du système (Safari : toujours locale) ;
+    - départ et arrivée de l'itinéraire (peut-être le domicile) : sur l'appareil et dans la sauvegarde, jamais dans le rapport.
+  - **Tests** :
+    - guidage : disposition de la feuille compacte (actions au petit cran, adresses dessous, Quitter en dernier, petit cran < 30 % de l'écran sur iPhone) ; voix distante refusée, voix locale choisie ;
+    - hors ligne : itinéraire et simulation ;
+    - l'audit des cibles de 44 px parcourt désormais toutes les pages (≈ 1,5 min sous WebKit chargé) : `test.slow()`.
 
 ---
 
@@ -739,7 +763,8 @@ neyron-tournees/
 │   ├── icons/
 │   └── data/             # GÉNÉRÉ, commité : plan.json, addresses.json, roads.json, version.json (ne pas lire)
 └── tests/                # Playwright : *.spec.js (plan, pointage, gps, wakelock, sauvegarde, debug, hors-ligne ;
-                          #   branche facteur : navigation, tournees, preparer, distribuer, controler, robustesse),
+                          #   branche facteur : navigation, tournees, preparer, distribuer, controler, robustesse ;
+                          #   itinéraire et guidage : itineraire, reperes, guidage),
                           #   helpers.js (outils communs), serve.py (serveur statique des tests)
 ```
 
@@ -1026,6 +1051,9 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **Captures sous WebKit (Windows)** : les animations CSS y sont lentes, une capture peut tomber en pleine entrée de page ou de dialogue (page blanche, dialogue à moitié transparent). Capturer avec `reducedMotion: 'reduce'`, comme les tests. Ce WebKit **ne dessine pas** `backdrop-filter` (le plan reste net sous le verre) : le flou ne se juge que sur l'iPhone, d'où des matériaux assez opaques pour rester lisibles sans flou.
 - **Machine chargée** (navigateur de l'utilisateur ouvert, `com.docker.llama-server` actif) : des démarrages de l'app sous WebKit dépassent 15 s, sans rapport avec le code (un essai sans flou a donné plus d'échecs ; les tests relancés seuls passent). `waitReady` attend donc 30 s. Lancer avec `--workers=3` à `5` pour distinguer les vrais échecs (25/10/2026, après I2 : 5 workers → quelques tests WebKit réussis au second essai ; WebKit seul avec 3 workers → 66/66).
 - **Port 8100 = serveur des tests** : Playwright le démarre et l'arrête. Pour voir l'app en local, servir `docs/` sur le port 8000 (`python -m http.server -d docs 8000 --bind 127.0.0.1`), puis « Recharger » sur le bandeau (le service worker sert d'abord la version en cache).
+- **Python sous Windows et fins de ligne** : `Path.write_text` écrit des CRLF. Pour réécrire un fichier du dépôt, passer par `write_bytes(s.encode('utf-8'))` (ou `newline=''`). Le stamp et git neutralisent les CRLF, mais le diff devient illisible.
+- **Recalculer un itinéraire retouché** demande confirmation (`ui.confirm`) : dans un script de mesure ou un test, remettre `manual` à faux avant `route.compute`, sinon l'appel attend une réponse qui ne vient jamais.
+- **Voix de synthèse** : `speechSynthesis.getVoices()` peut renvoyer des voix distantes (`localService: false`, voix Google de Chrome). Le texte part alors sur un serveur : ne jamais les utiliser (adresses, repères).
 - **Séparateurs des listes groupées** : `.group > * + *::before` dessine le trait fin ; un enfant direct ne peut donc pas utiliser son propre `::before` (pastille de couleur de l'ordre de passage : élément `.order-dot`).
 - **`<dialog>` en bas d'écran** : les styles du navigateur centrent un dialogue modal et bornent sa hauteur ; la feuille d'actions se place en `position: fixed; inset: auto 0 0 0`, sans `max-height`.
 - **Animations dans les tests** : mesurer un zoom après un délai fixe est instable sous WebKit chargé. Attendre la fin de l'animation (`map._anim` nul, `k` modifié).
@@ -1137,6 +1165,9 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
 | Position GPS | mémoire seulement | — | jamais stockée ni exportée ; masquée dans le diagnostic copié |
 | Repères d'adresse (I4) | `meta.tags`, sur l'appareil ; sauvegarde | 8 codes fermés (« chien »…) et une note de 60 caractères au plus, par adresse | foyer identifiable : avertissement sous la note (rien sur les personnes, aucun code d'accès) ; **jamais dans le rapport** ; liste à revoir et « Tout supprimer » dans Préparer › Repères |
 | Préférences (`localStorage`) | appareil | thème, onglet, réglages de charge, heures du rapport, tournée en pause (id de tournée et numéro d'arrêt, I5 bis), voix et carte orientée (I6) | aucune donnée personnelle |
+| Itinéraire (`tour.route`, I3) | fiche de tournée ; sauvegarde | réglages, arrêts, départ et arrivée choisis sur le plan (peut-être le domicile ou le dépôt) | sur l'appareil ; **jamais dans le rapport** |
+| Consignes vocales (I6) | synthèse du système | adresses, motifs et notes des repères lus à voix haute | **voix locales seulement** : une voix synthétisée sur un serveur est écartée (I7) |
+| Liens Plans / Waze (I5) | app choisie | coordonnées du premier arrêt | seulement sur toucher, rien d'autre n'est transmis |
 
 - Aucun flux réseau nouveau : CSP inchangée, aucun service tiers, tout reste sur l'appareil.
 - **Conservation limitée** (validée le 25/10/2026) : `store.purge()` efface, à chaque lancement et après chaque import, les événements antérieurs à la dernière clôture de plus de **60 jours** de chaque tournée (`RETENTION_DAYS`, durée recommandée par la CNIL pour le suivi d'activité d'un salarié).
@@ -1275,3 +1306,7 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - rotation par un groupe SVG racine plutôt qu'une rotation CSS du conteneur : les gestes, le toucher et les cadrages restent exacts, et les textes se redressent un à un ;
   - cap tiré du trajet à venir plutôt que de la boussole de l'iPhone (pas de permission à demander, pas d'affolement à l'arrêt) ;
   - voix du système, hors ligne, avec une annonce par seuil ; repères annoncés seulement pendant la navigation.
+- **26/10/2026** — Commit `5995f7d` (I6). I7, avec la demande de l'utilisateur de gagner de la place sur le plan :
+  - feuille de navigation compacte : arrêt et temps restant en petit, les deux actions seules au petit cran, adresses à aller chercher en tirant la feuille, Quitter tout en bas ; « Tout l'arrêt distribué » aussi pour une seule adresse ;
+  - trajets mis en mémoire plutôt qu'un recalcul complet à chaque retouche ;
+  - voix distantes écartées, même si c'est la seule voix française du navigateur : les annonces contiennent des adresses et des repères.

@@ -231,6 +231,7 @@ test.describe('ergonomie', () => {
   test.use({ permissions: ['geolocation'], geolocation: GPS.gare28 });
 
   test('cibles tactiles d\'au moins 44 px et boutons nommés, dans les 3 vues et les dialogues', async ({ page }) => {
+    test.slow();  // parcourt toutes les pages et dialogues : ~1,5 min sous WebKit chargé (délai triplé)
     await openApp(page);
     // éléments touchables visibles trop petits ; une case à cocher compte par son libellé (la cible réelle)
     const audit = () => page.evaluate(() => {

@@ -521,24 +521,23 @@
       <!-- ============================================================ fiche d'adresse -->
       <div id="view-navigate" class="view navigate" hidden>
         <div class="page" data-page="root">
-          <header class="nav">
+          <header class="nav nav-compact">
             <div class="nav-titles">
-              <h1 id="nav-title" class="nav-title"></h1>
-              <p id="nav-sub" class="nav-sub"></p>
+              <p class="nav-kicker"><span id="nav-title"></span><span id="nav-left"></span></p>
+              <h1 id="nav-sub" class="nav-street"></h1>
             </div>
             <button id="nav-voice" class="round-act voice-btn" type="button" aria-pressed="true" aria-label="Couper les consignes vocales" hidden>
               <svg class="ico ico-on" viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>
               <svg class="ico ico-off" viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5"/></svg>
             </button>
-            <button id="nav-stop" class="btn tinted danger-tint small" type="button">Quitter</button>
           </header>
           <div class="page-body">
-            <section class="nav-stop" data-peek aria-label="Arrêt en cours">
+            <div class="btn-pair nav-acts" data-peek>
+              <button id="nav-skip" class="btn tinted" type="button">Arrêt suivant</button>
+              <button id="nav-all" class="btn filled" type="button">Tout l'arrêt distribué</button>
+            </div>
+            <section class="nav-stop" aria-label="Adresses de l'arrêt">
               <ul id="nav-addrs" class="group nav-addrs"></ul>
-              <div class="btn-pair">
-                <button id="nav-skip" class="btn tinted" type="button">Arrêt suivant</button>
-                <button id="nav-all" class="btn filled" type="button">Tout l'arrêt distribué</button>
-              </div>
             </section>
             <section id="nav-join" class="sec" hidden>
               <h3 class="sec-head">Rejoindre l'arrêt avec une autre app</h3>
@@ -552,6 +551,7 @@
               <h3 class="sec-head">Ensuite</h3>
               <ol id="nav-next" class="group"></ol>
             </section>
+            <button id="nav-stop" class="btn tinted danger-tint wide nav-quit" type="button">Quitter la tournée</button>
           </div>
         </div>
       </div>
