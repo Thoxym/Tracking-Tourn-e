@@ -1,5 +1,7 @@
 // Plan SVG métrique (1 unité = 1 m, nord en haut) : couches, zoom et déplacement par le viewBox,
 // gestes (glisser, pincer, molette, clavier) et résolution des taps sur les numéros.
+// Seul ce qui est près de l'écran est dessiné (tuiles de parcelles et de bâtiments, cases de numéros) : trois
+// communes, c'est 3 858 numéros et 12 000 parcelles, que le moteur repeindrait sinon à chaque image de zoom.
 // Rotation (carte orientée dans le sens de la marche, navigation) : un groupe racine tourne autour du centre de la vue ;
 // les conversions écran <-> plan en tiennent compte, numéros et noms de rues restent droits.
 
@@ -12,6 +14,9 @@ const DRAG_THRESHOLD_PX = 4;   // pointer capture seulement au-delà (sinon le c
 const LONG_PRESS_MS = 600;
 const DOUBLE_TAP_MS = 300;
 const VIEW_MARGIN_M = 200;     // le centre de la vue reste à moins de 200 m du cadre
+const CELL_M = 250;            // numéros, points, bâtiments liés et noms de rues regroupés par case de 250 m
+const CELL_PAD_M = 80;         // débord d'une case (texte, bâtiment plus grand que la case)
+const CULL_PAD_PX = 120;       // marge autour de l'écran dessinée d'avance (glisser sans trou)
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -69,6 +74,7 @@ export class MapView {
     this.root = el('g', { class: 'root' }, svg);
     const layer = (cls) => el('g', { class: cls }, this.root);
     const lParcels = layer('l-parcels');
+    const lLimits = layer('l-limits');
     const lTraces = layer('l-traces');
     const lBuildings = layer('l-buildings');
     this.lRoute = layer('l-route');
@@ -81,6 +87,7 @@ export class MapView {
     this.tagged = [];
     this.lRouteStops = layer('l-route-stops');
     this.lSelect = layer('l-select');
+    this.lCommunes = layer('l-communes');
     this.lGps = layer('l-gps');
 
     const streets = this.data.streets;
@@ -91,11 +98,26 @@ export class MapView {
       return g;
     });
 
-    el('path', { class: 'parcels', d: plan.parcels }, lParcels);
+    this.cullItems = [];  // {b: [xmin, ymin, xmax, ymax], els, shown}
+    const tiles = (list, cls, parent) => {
+      for (const t of typeof list === 'string' ? [{ b: [-Infinity, -Infinity, Infinity, Infinity], d: list }] : list || []) {
+        this.cullItems.push({ b: t.b, els: [el('path', { class: cls, d: t.d }, parent)], shown: true });
+      }
+    };
+    tiles(plan.parcels, 'parcels', lParcels);
+    if (plan.limits) el('path', { class: 'limits', d: plan.limits }, lLimits);
+    this.communeEls = [];
+    for (const c of this.data.communes || []) {
+      for (const lb of c.labels || []) {
+        const t = el('text', { class: 'clabel', x: lb.x, y: lb.y }, this.lCommunes);
+        t.textContent = c.name;
+        this.communeEls.push(t);
+      }
+    }
     groups(lTraces).forEach((g, i) => el('path', { class: 'trace', d: plan.traces[i] || '' }, g));
 
     // bâtiments liés : couleur de la rue de leurs adresses pointables
-    el('path', { class: 'bld-other', d: plan.buildingsOther }, lBuildings);
+    tiles(plan.buildingsOther, 'bld-other', lBuildings);
     const gBld = groups(lBuildings);
     const owners = new Map();
     for (const a of this.data.addresses) {
@@ -132,6 +154,28 @@ export class MapView {
       if (a.rep) el('tspan', { class: 'rep' }, num).textContent = a.rep;
       this.addrEls.set(a.id, { num, dot });
     }
+
+    // cases de CELL_M : numéros, points et bâtiments liés, masqués ensemble hors de l'écran (noms de rues, longs
+    // et peu nombreux : toujours dessinés)
+    const cells = new Map();
+    const cell = (x, y) => {
+      const i = Math.floor(x / CELL_M);
+      const j = Math.floor(y / CELL_M);
+      const key = `${i},${j}`;
+      if (!cells.has(key)) {
+        cells.set(key, { b: [i * CELL_M - CELL_PAD_M, j * CELL_M - CELL_PAD_M, (i + 1) * CELL_M + CELL_PAD_M, (j + 1) * CELL_M + CELL_PAD_M], els: [], shown: true });
+      }
+      return cells.get(key).els;
+    };
+    for (const a of this.data.addresses) {
+      const { num, dot } = this.addrEls.get(a.id);
+      cell(a.x, a.y).push(num, dot);
+    }
+    for (const [bat, { path }] of this.buildingEls) {
+      const a = owners.get(bat)[0];
+      cell(a.x, a.y).push(path);
+    }
+    this.cullItems.push(...cells.values());
 
     this.ring = el('circle', { class: 'sel-ring', r: 1, display: 'none' }, this.lSelect);
     this.markEl = el('circle', { class: 'mark-ring', r: 1, display: 'none' }, this.lSelect);
@@ -277,6 +321,7 @@ export class MapView {
       lb.el.setAttribute('transform', `translate(${lb.x} ${lb.y}) rotate(${(s - d).toFixed(1)})`);
     }
     for (const t of this.lRouteStops.querySelectorAll('.route-stop-num')) this._uprightOne(t);
+    for (const t of this.communeEls) this._uprightOne(t);
     this._updateTags();
   }
 
@@ -308,11 +353,31 @@ export class MapView {
     this.svg.setAttribute('viewBox', `${this.cx - w / 2} ${this.cy - h / 2} ${w} ${h}`);
     if (this.rotDeg) this.root.setAttribute('transform', `rotate(${this.rotDeg.toFixed(2)} ${this.cx.toFixed(2)} ${this.cy.toFixed(2)})`);
     else this.root.removeAttribute('transform');
+    this._cull(r);
     if (this.k !== this._lastK) {
       this._lastK = this.k;
       this._applyScale();
     }
     this.emit('view', { k: this.k, cx: this.cx, cy: this.cy });
+  }
+
+  // ne dessiner que les tuiles et les cases près de l'écran : cercle circonscrit à la vue (le plan peut tourner
+  // autour de son centre), plus une marge pour glisser sans voir apparaître les numéros
+  _cull(r = this._rect()) {
+    const half = (Math.hypot(r.width, r.height) / 2 + CULL_PAD_PX) / this.k;
+    const x0 = this.cx - half;
+    const x1 = this.cx + half;
+    const y0 = this.cy - half;
+    const y1 = this.cy + half;
+    for (const c of this.cullItems) {
+      const vis = c.b[2] >= x0 && c.b[0] <= x1 && c.b[3] >= y0 && c.b[1] <= y1;
+      if (vis === c.shown) continue;
+      c.shown = vis;
+      for (const e of c.els) {
+        if (vis) e.removeAttribute('display');
+        else e.setAttribute('display', 'none');
+      }
+    }
   }
 
   // tailles constantes à l'écran : texte recalculé (halos en em dans le CSS), traits en non-scaling-stroke
@@ -323,6 +388,7 @@ export class MapView {
     const ls = clamp(12 / k, 2.6, 22);
     this.lLabels.style.fontSize = `${ls}px`;
     this.lRouteStops.style.fontSize = `${11 / k}px`;
+    this.lCommunes.style.fontSize = `${15 / k}px`;
     this._updateTags();
     this.svg.classList.toggle('z-low', k < K_NUMBERS);
     this.svg.classList.toggle('z-min', k < K_LABELS);

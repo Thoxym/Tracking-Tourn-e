@@ -31,6 +31,11 @@ async function start() {
   const splash = document.getElementById('loading');
   try {
     const [data, plan] = await Promise.all([loadJSON('./data/addresses.json'), loadJSON('./data/plan.json')]);
+    // libellé d'une rue : son nom, suivi de la commune quand plusieurs communes ont une voie de ce nom
+    for (const st of data.streets) {
+      st.label ??= st.name;
+      st.commune = data.communes?.[st.c]?.name || '';
+    }
     const store = await Store.open(data.version, data.presets || []);
     const map = new MapView(document.getElementById('map'), data, plan);
     const panel = new Panel();

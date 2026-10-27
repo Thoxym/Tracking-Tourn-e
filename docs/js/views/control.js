@@ -63,7 +63,7 @@ export class ControlView {
       const todo = addrs.length - d - ag - an;
       rows.push(streetRow({
         color: ui.streets[i].colors[dark ? 1 : 0],
-        name: ui.streets[i].name,
+        name: ui.streets[i].label,
         sub: d + an === addrs.length ? 'rue entière traitée' : `${todo} restante${todo > 1 ? 's' : ''}`,
         count: `${d}/${addrs.length}`,
         again: ag,

@@ -6,7 +6,7 @@
 
 ## 0. En bref et règles d'or
 
-Projet : une web app installable sur iPhone pour faire des **tournées de tous les numéros de certaines rues** de Neyron (Ain, 01700, code INSEE **01275**). Elle affiche un plan cadastral avec le numéro de chaque maison, permet de **pointer les numéros faits** (un par un ou une rue entière) et montre **la position GPS**.
+Projet : une web app installable sur iPhone pour faire des **tournées de tous les numéros de certaines rues** de Neyron (Ain, 01700, code INSEE **01275**), et depuis le 26/10/2026 de **Beynost (01043)** et **Saint-Maurice-de-Beynost (01376)** (§2 quinquies). Elle affiche un plan cadastral avec le numéro de chaque maison, permet de **pointer les numéros faits** (un par un ou une rue entière) et montre **la position GPS**.
 
 Un premier projet (plan interactif en artifact claude.ai + PDF A4 par rue) a fixé les données, traitements et pièges décrits ici. On repart sur une **PWA hors ligne hébergée en statique sur GitHub Pages**.
 
@@ -651,6 +651,24 @@ Pourquoi pas Dijkstra seul : il donne le plus court chemin entre deux points. L'
     - hors ligne : itinéraire et simulation ;
     - l'audit des cibles de 44 px parcourt désormais toutes les pages (≈ 1,5 min sous WebKit chargé) : `test.slow()`.
 
+### 2 quinquies. Beynost et Saint-Maurice-de-Beynost (demandé le 26/10/2026)
+Les deux communes s'ajoutent à Neyron sur le même plan. Elles ne touchent pas Neyron : **Miribel est entre les deux** (≈ 3 km sans adresse dans le cadre, routes comprises dans le réseau routier).
+- [x] **C1 — Données, plan et app** ✅ (26/10/2026), publié le 27/10/2026 (avance rapide de `main`, accord de l'utilisateur).
+  - **Communes** : `config.COMMUNES` (INSEE, nom, totaux attendus ; Neyron seule vérifiée : 941 adresses, 90 voies). Extraction des trois communes depuis les fichiers département (`geo.find_sources` refuse une version commune quand il y en a plusieurs). Cache `work/adresses.csv`.
+  - **Adresses retenues** : toutes sauf les sous-adresses (`ADDRESS_EXCLUDED_TYPES` : logement, cage d'escalier, bâtiment…). À Beynost et Saint-Maurice, 900 adresses sont en position « segment » (sur l'axe de la rue, source inconnue), « parcelle » ou sans type (source Arcep) : ce sont de vraies adresses (aucun doublon d'une « entrée », vérifié), souvent des lotissements récents. Neyron ne change pas (941).
+  - **Totaux** : **3858 adresses sur 301 voies** (Neyron 941 / 90, Beynost 1940 / 136, Saint-Maurice-de-Beynost 977 / 75). Cadre 7747 × 4879 m.
+  - **Rue = commune + nom** : rang `s` dans l'ordre alphabétique, puis l'ordre des communes. `streets[].c` (indice dans `communes`) ; `streets[].label` quand le nom existe dans plusieurs communes (9 noms, dont « Route de Genève » dans les trois) : « Route de Genève (Beynost) ». L'app affiche `label` partout (fiche, listes, ordre, voix, rapport), le plan garde le nom seul. Le preset « Neyron — 10 rues » désigne ses voies par commune (`commune: "01275"`), mêmes 229 adresses.
+  - **Transformation GPS -> Lambert-93 du second degré** : sur 7,5 km, l'affine seule s'écarte de 1,2 m (au-delà du seuil de 0,5 m). `affine` garde `x`, `y` (partie affine) et ajoute `o` (centre lon/lat), `qx`, `qy` (termes en u², u·v, v²) : résidu 7 mm, comme l'écart BAN / pyproj. `gps.lonLatToL93` et l'inverse `l93ToLonLat` (affine inversée, puis 4 corrections) ; des données sans `o` restent lues comme une affine.
+  - **Parcelles déduites** : 2796 adresses sans `cad_parcelles` (presque toutes à Beynost et Saint-Maurice). `geo.infer_parcels` prend la parcelle qui contient le point, sinon celles à moins de 5 m (point d'entrée posé au portail ; à un angle, toutes à 1,5 m près). Pas pour les « segment » (côté inconnu). 2020 adresses ainsi rattachées ; 2982 / 3858 liées à un bâtiment (876 sans, presque toutes en « segment »). Les parcelles déduites servent aussi au point de remise de l'itinéraire.
+  - **Bâtiments sans adresse** : un bâtiment à moins de 40 m d'une adresse « segment » n'est pas signalé (`UNADDRESSED_SEGMENT_DIST_M`) : 536 dans les trois communes.
+  - **Limites des communes** : fermeture des parcelles de chaque commune (`geo.commune_limits`), une seule ligne entre deux communes voisines, ni bords du cadre ni petits trous ; `plan.limits` (path ouvert) en tirets violets. Noms des communes (`communes[].labels`, au point d'adresse le plus central) en vue d'ensemble seulement (`z-low`), redressés quand le plan tourne. Au bord du Rhône, la limite suit la rive (les parcelles s'arrêtent à l'eau).
+  - **Réseau routier** : retéléchargé sur le nouveau cadre (`roads-bdtopo.geojson`, `roads-osm.json`, sans code commune dans le nom) : 8412 nœuds, 10074 tronçons, 659 km ; 95,1 % des adresses sur un tronçon de leur voie ; `roads.json` 929 Ko (307 Ko compressé).
+  - **Dessin limité à l'écran** (`map._cull`) : parcelles et bâtiments sans adresse en **tuiles de 500 m** (`plan.parcels` / `buildingsOther` : `[{b, d}]`, `geo.tiled_paths`), numéros, points et bâtiments liés par **cases de 250 m** ; seul ce qui touche le cercle circonscrit à la vue (rotation comprise) + 120 px est dessiné (`display="none"` sinon). Une image de zoom à Beynost : WebKit logiciel 0,72 s → 0,47 s, Chromium 0,13 s → 0,05 à 0,1 s, soit le niveau de Neyron seule (0,45 s et 0,04 s). La vue d'ensemble des trois communes reste plus lente (tout est à l'écran).
+  - **Interface** : fiche d'adresse avec la commune ; Préparer › « Rues des communes » : commune en sous-titre, recherche par nom ou par commune (« beynost ») ; rapport CSV / JSON avec une colonne `commune`.
+  - **Import de secteur** : voie reconnue par son libellé (« Route de Genève (Beynost) ») ou par son nom s'il est unique ; un nom partagé sans précision prend la commune des autres lignes du fichier si elles sont toutes dans la même, sinon la ligne est signalée (« voie présente dans plusieurs communes : précisez … »).
+  - **Tailles** : `addresses.json` 583 Ko (89 Ko compressé), `plan.json` 2,6 Mo (0,9 Mo compressé). Build complet ≈ 95 s (réseau routier ≈ 80 s).
+  - **Tests** : attendus adaptés (libellés avec commune, colonne `commune` du rapport, totaux par commune dans `plan.spec.js`) ; import de secteur avec un nom partagé, seul (refusé) puis précisé (accepté) ; course corrigée dans le test d'anomalie (lecture du motif avant la fin de l'écriture). Suite complète (3 workers) : 164 réussis, 1 réussi au second essai, 5 ignorés. Playwright ne rend pas toujours la main après le dernier test (WebKit, §10) : vérifier que les 170 tests ont un résultat.
+
 ---
 
 ## 3. Définition de « terminé » pour la v0.1
@@ -677,8 +695,10 @@ Sous Licence Ouverte Etalab 2.0. Le pipeline accepte la version département **o
 | Parcelles, GeoJSON | `cadastre-01-parcelles.json.gz` (181 Mo, 815 Mo décompressé) | `cadastre-01275-parcelles.json.gz` |
 
 Réseau routier (branche facteur, itinéraire), téléchargé par `pipeline/fetch_roads.py` dans `sources/` :
-- `roads-bdtopo-01275.geojson` : BD TOPO `troncon_de_route`, IGN, Licence Ouverte ; environ 11 Mo, 3650 tronçons ;
-- `roads-osm-01275.json` : OSM `way[highway]`, ODbL ; environ 0,7 Mo.
+- `roads-bdtopo.geojson` : BD TOPO `troncon_de_route`, IGN, Licence Ouverte ; environ 23 Mo, 7545 tronçons (cadre des trois communes + 1,5 km) ;
+- `roads-osm.json` : OSM `way[highway]`, ODbL ; environ 3 Mo.
+
+Trois communes (§2 quinquies) : seule la version **département** les contient toutes. Neyron 959 lignes BAN, Beynost 1940, Saint-Maurice-de-Beynost 977.
 
 Les noms peuvent varier (`_csv.gz`, `_json.gz`) : détecter par motif. **Ne jamais lire ces fichiers en entier.** Si un fichier d'un autre type est fourni (PDF, shapefile…), demander à l'utilisateur quoi en faire.
 
@@ -837,8 +857,11 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 {
   "version": "a1b2c3d",
   "frame": { "x0": 0, "y1": 0, "W": 1570, "H": 1678 },     // Lambert-93, mètres
-  "affine": { "x": [a, b, c], "y": [d, e, f], "maxResidual_m": 0.08 },
-  "streets": [ { "i": 0, "name": "Montée Neuve", "colors": ["#1d5fd1", "#6ea2ff"], "count": 58,
+  // affine + second degré (§2 quinquies) : X = a·lon + b·lat + c + qx·[u², u·v, v²], u = lon - o[0], v = lat - o[1]
+  "affine": { "x": [a, b, c], "y": [d, e, f], "o": [lon0, lat0], "qx": [p, q, r], "qy": [s, t, w], "maxResidual_m": 0.007 },
+  "communes": [ { "insee": "01275", "name": "Neyron", "count": 941, "labels": [ { "x": 812.4, "y": 1530.2 } ] } ],
+  // c : indice dans communes ; label : seulement si le nom existe dans plusieurs communes
+  "streets": [ { "i": 0, "name": "Montée Neuve", "c": 0, "label": "…", "colors": ["#1d5fd1", "#6ea2ff"], "count": 58,
                  "len": 812,                                                // branche facteur : longueur (m)
                  "labels": [ { "x": 895.4, "y": 806.1, "a": -81 } ] } ],   // a : angle en degrés, SVG
   "presets": [ { "id": "default", "name": "Neyron — 10 rues", "ids": ["01275_…", …] } ],  // branche facteur
@@ -863,9 +886,11 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   // tronçon, abscisse et distance de l'accès voiture
   "snap": { "01275_0420_00028": [ei, t, sd, off, px, py], … } }
 // plan.json
-{ "parcels": "M…", "buildingsOther": "M…",
+// parcelles et bâtiments sans adresse en tuiles de 500 m : b = emprise en coordonnées SVG (un ancien format "M…" reste lu)
+{ "parcels": [ { "b": [xmin, ymin, xmax, ymax], "d": "M…" } ], "buildingsOther": [ { "b": […], "d": "M…" } ],
   "buildings": { "b42": "M…" },          // bâtiments liés à une adresse
-  "traces": { "0": "M…", "1": "M…" } }   // par index de rue
+  "traces": { "0": "M…", "1": "M…" },    // par index de rue
+  "limits": "M…L…" }                     // limites des communes (path ouvert)
 ```
 
 ### 7.7 Chiffres réels du build (19/10/2026, version des données `442a0fd1`)
@@ -1021,6 +1046,9 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **`hidden` et `all: unset`** : `all: unset` sur les boutons annule `hidden`. Ajouter `[hidden]{display:none!important}`.
 - **Couleurs** sur 6 chiffres (`#888` mal interprété a déjà donné du bleu marine avec reportlab).
 - **Doublons BAN** : une adresse peut figurer deux fois avec le même `id` (deux entrées, ex. 2 Impasse Privée des Capucins). L'id étant la clé de progression, le pipeline garde la première occurrence et le signale.
+- **Positions BAN « segment »** (Beynost, Saint-Maurice) : le point est sur l'axe de la rue, pas sur la maison, et `cad_parcelles` est vide. Pas de parcelle déduite (on ne sait pas de quel côté), souvent pas de bâtiment ; le numéro reste affiché et pointable au point BAN. Ne pas filtrer les adresses sur `type_position == "entrée"` : on perdrait 900 vraies adresses.
+- **Même nom de rue dans plusieurs communes** (Route de Genève…) : une rue est un couple (commune, nom). Afficher `label` (avec la commune) et non `name` dans les listes et les messages ; chercher une rue par nom dans les tests renvoie celle de Neyron (première commune).
+- **Transformation affine sur plusieurs kilomètres** : la projection Lambert-93 n'est plus affine à 1 m près au-delà de quelques kilomètres ; d'où le terme du second degré (`affine.o/qx/qy`).
 - **Rang `s` des rues** : c'est le rang alphabétique dans les données, qui se décale si une voie apparaît dans un nouveau millésime BAN. Pour enregistrer quelque chose par rue (ordre, sens), utiliser la **clé de voie** (`01275_0420`, début de l'id des adresses, `tourplan.streetKeys`).
 - **Caractère ⚠ (U+26A0)** : même suivi du sélecteur de texte U+FE0E, WebKit sous Windows l'affiche en emoji jaune. Utiliser une icône SVG (`common.anomalyCount`).
 - **CSV venant d'Excel en français** : souvent en Windows-1252, avec `;`. Décoder en UTF-8 strict (`TextDecoder('utf-8', {fatal: true})`), puis Windows-1252 en cas d'échec.
@@ -1315,3 +1343,11 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - trajets mis en mémoire plutôt qu'un recalcul complet à chaque retouche ;
   - voix distantes écartées, même si c'est la seule voix française du navigateur : les annonces contiennent des adresses et des repères.
 - **26/10/2026** — Commit `5afdf18` (I7). L8, décisions de l'utilisateur : publication par avance rapide de `main` (même URL, progression v0.1 reprise) plutôt qu'une source Pages sur la branche ou un second dépôt ; branche renommée `dev_tournees`.
+- **26/10/2026** — Ajout de Beynost et Saint-Maurice-de-Beynost, à la demande de l'utilisateur (§2 quinquies) :
+  - un seul plan pour les trois communes, malgré Miribel entre Neyron et les deux autres : les tournées restent libres de mêler les communes, et l'itinéraire passe par les routes de Miribel ;
+  - toutes les positions BAN gardées (« segment », « parcelle », sans type), sauf les sous-adresses : pour la distribution, chaque numéro compte ;
+  - rue = (commune, nom), libellé avec la commune seulement pour les noms partagés, pour ne pas alourdir les 292 autres ;
+  - transformation du second degré plutôt qu'un seuil de résidu relevé : 7 mm au lieu de 1,2 m, pour 3 coefficients de plus ;
+  - parcelle déduite du point d'entrée, mais pas des positions « segment » ;
+  - dessin limité à l'écran plutôt qu'un passage au canvas : même rendu, même code de gestes, coût revenu au niveau de Neyron seule ;
+  - Miribel n'est pas ajoutée (pas demandée).

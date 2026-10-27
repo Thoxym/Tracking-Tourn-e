@@ -240,8 +240,19 @@ export function parseSector(text, streets, allByStreet, keys) {
   const firstIdx = lines.findIndex((l) => l.trim() && !l.trim().startsWith('#'));
   const first = firstIdx >= 0 ? lines[firstIdx] : '';
   const sep = [';', '\t', ','].map((c) => [c, first.split(c).length]).sort((p, q) => q[1] - p[1])[0][0];
-  const names = streets.map((st) => norm(st.name));
+  // libellé (« Route de Genève (Beynost) ») ; le nom seul suffit s'il n'est porté que par une commune
+  const names = streets.map((st) => norm(st.label || st.name));
   const byName = new Map(names.map((n, s) => [n, s]));
+  const homonyms = new Map();
+  streets.forEach((st, s) => {
+    const n = norm(st.name);
+    homonyms.set(n, [...(homonyms.get(n) || []), s]);
+  });
+  for (const [n, list] of homonyms) if (list.length === 1 && !byName.has(n)) byName.set(n, list[0]);
+  // nom porté par plusieurs communes, sans précision : la commune des autres lignes, si elles sont toutes dans la même
+  const parsed = lines.map((raw) => splitLine(raw, sep)[0] || '');
+  const sure = new Set(parsed.map((n) => byName.get(norm(n))).filter((s) => s !== undefined).map((s) => streets[s].c));
+  const home = sure.size === 1 ? [...sure][0] : undefined;
   const segments = [];
   const errors = [];
   lines.forEach((raw, k) => {
@@ -252,7 +263,12 @@ export function parseSector(text, streets, allByStreet, keys) {
     const no = k + 1;
     const fail = (msg) => errors.push({ line: no, msg });
     if (!name) return fail('voie manquante');
-    const s = byName.get(norm(name));
+    let s = byName.get(norm(name));
+    if (s === undefined && home !== undefined) s = homonyms.get(norm(name))?.find((j) => streets[j].c === home);
+    if (s === undefined && homonyms.get(norm(name))?.length > 1) {
+      const which = homonyms.get(norm(name)).map((j) => `« ${streets[j].label} »`).join(', ');
+      return fail(`voie présente dans plusieurs communes : précisez ${which}`);
+    }
     if (s === undefined) {
       const q = norm(name);
       let best = -1;
@@ -264,7 +280,7 @@ export function parseSector(text, streets, allByStreet, keys) {
           best = j;
         }
       });
-      return fail(`voie inconnue « ${clip(name)} »${best >= 0 ? ` (« ${streets[best].name} » ?)` : ''}`);
+      return fail(`voie inconnue « ${clip(name)} »${best >= 0 ? ` (« ${streets[best].label} » ?)` : ''}`);
     }
     const from = parseNum(fromS);
     const to = parseNum(toS);
@@ -277,7 +293,7 @@ export function parseSector(text, streets, allByStreet, keys) {
     const hi = reverse ? from : to;
     const ids = allByStreet[s].filter((a) => (side === 'all' || a.side === side)
       && (lo === undefined || a.n >= lo) && (hi === undefined || a.n <= hi)).map((a) => a.id);
-    if (!ids.length) return fail(`aucun numéro ne correspond (${streets[s].name})`);
+    if (!ids.length) return fail(`aucun numéro ne correspond (${streets[s].label})`);
     segments.push({ line: no, s, side, from: lo, to: hi, reverse, ids });
     return undefined;
   });

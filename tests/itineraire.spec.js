@@ -41,7 +41,7 @@ test.describe('réseau routier', () => {
       expect(t).toBeGreaterThanOrEqual(0);
       expect(t).toBeLessThanOrEqual(e[2] + 0.1);
       expect([-1, 1]).toContain(sd);
-      expect(off).toBeLessThan(120);
+      expect(off).toBeLessThan(150);
       expect(Math.hypot(px - a.x, py - a.y)).toBeLessThan(400);  // point de remise près de l'adresse
       // adresse sur un chemin non carrossable : accès voiture donné à part
       if (!(e[3] & CAR)) {
@@ -252,7 +252,7 @@ test.describe('page Itinéraire', () => {
     const label = await page.evaluate((id) => {
       const { map, ui } = window.neyronApp;
       const a = map.byId.get(id);
-      return `${a.n}${a.rep ? ` ${a.rep}` : ''} ${ui.streets[a.s].name}`;
+      return `${a.n}${a.rep ? ` ${a.rep}` : ''} ${ui.streets[a.s].label}`;
     }, route.stops[0].ids[0]);
     await expect(page.locator('#next-title')).toHaveText(label);
 

@@ -5,7 +5,7 @@ const { STREET, addressData, tourIds, tourStreets, trackErrors, openApp, waitRea
 
 const tab = (page, name) => page.locator(`#tabbar [data-tab="${name}"]`);
 const num = (a) => `${a.n}${a.rep ? ` ${a.rep}` : ''}`;
-const label = (a) => `${num(a)} ${addressData().streets[a.s].name}`;
+const label = (a) => `${num(a)} ${addressData().streets[a.s].label || addressData().streets[a.s].name}`;
 
 function prim(pts) {  // arbre couvrant (même définition que l'app et le pipeline)
   const n = pts.length;
@@ -34,10 +34,10 @@ function groups(ids, order = null, reverse = []) {
   const { addresses, streets } = addressData();
   const inside = addresses.filter((a) => ids.has(a.id));
   const present = [...new Set(inside.map((a) => a.s))];
-  const seq = order ? order.map((n) => streets.findIndex((st) => st.name === n)) : present;
+  const seq = order ? order.map((n) => streets.findIndex((st) => (st.label || st.name) === n)) : present;
   return seq.map((s) => {
     const addrs = inside.filter((a) => a.s === s);
-    return reverse.includes(streets[s].name) ? addrs.reverse() : addrs;
+    return reverse.includes(streets[s].label || streets[s].name) ? addrs.reverse() : addrs;
   });
 }
 function load(gs, sec = 20, kmh = 4) {
@@ -114,7 +114,7 @@ test('ordre de passage : monter, descendre, sens ; suivi par la légende et Cont
   const errors = trackErrors(page);
   await openApp(page);
   await openPage(page, 'prepare', '#prep-order-row');
-  const alpha = tourStreets().map((st) => st.name);
+  const alpha = tourStreets().map((st) => st.label || st.name);
   await expect(orderNames(page)).toHaveText(numbered(alpha));
   await expect(page.locator('#prep-order-n')).toHaveText(`${alpha.length} rues`);
   await expect(page.locator('#btn-order-reset')).toBeDisabled();
@@ -238,8 +238,8 @@ test('import d\'un secteur CSV : ordre, sens, lignes invalides signalées, Windo
 
   // ordre du fichier ; Route de Genève en numéros décroissants (193 → 58)
   await openPage(page, 'prepare', '#prep-order-row');
-  await expect(orderNames(page)).toHaveText(numbered(['Route de Genève', 'Chemin du Barry', 'Montée Neuve', 'Rue de la Gare']));
-  await expect(page.locator('[aria-label="Inverser le sens : Route de Genève"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(orderNames(page)).toHaveText(numbered(['Route de Genève (Neyron)', 'Chemin du Barry', 'Montée Neuve', 'Rue de la Gare']));
+  await expect(page.locator('[aria-label="Inverser le sens : Route de Genève (Neyron)"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator(`#prep-order .order-row[data-s="${s('Route de Genève')}"] .vrow-sub`))
     .toContainText(`n° ${num(geneve.at(-1))} → ${num(geneve[0])}`);
 
@@ -251,5 +251,13 @@ test('import d\'un secteur CSV : ordre, sens, lignes invalides signalées, Windo
   await expect(page.locator('#prompt-detail')).toHaveText(`Secteur : ${pick('Rue de la Gare').length} adresses sur 1 rue, dans l'ordre du fichier.`);
   await page.click('#prompt button[value="cancel"]');
   await expect(page.locator('#tour-list .tour-row')).toHaveCount(2);
+
+  // nom porté par plusieurs communes : seul, il faut préciser ; avec la commune, il est reconnu
+  await page.setInputFiles('#sector-file', { name: 'geneve.csv', mimeType: 'text/csv', buffer: Buffer.from('Route de Genève;;;\n', 'utf-8') });
+  await expect(page.locator('#toast-msg')).toContainText('ligne 1 : voie présente dans plusieurs communes : précisez « Route de Genève (Neyron) », « Route de Genève (Beynost) »');
+  const beynost = streets.findIndex((st) => st.label === 'Route de Genève (Beynost)');
+  await page.setInputFiles('#sector-file', { name: 'geneve.csv', mimeType: 'text/csv', buffer: Buffer.from('Route de Genève (Beynost);;;\n', 'utf-8') });
+  await expect(page.locator('#prompt-detail')).toHaveText(`Secteur : ${addresses.filter((x) => x.s === beynost).length} adresses sur 1 rue, dans l'ordre du fichier.`);
+  await page.click('#prompt button[value="cancel"]');
   expect(errors).toEqual([]);
 });

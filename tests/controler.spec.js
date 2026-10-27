@@ -6,7 +6,7 @@ const { addressData, tourIds, tourTotal, tourStreets, trackErrors, openApp, wait
 
 const tab = (page, name) => page.locator(`#tabbar [data-tab="${name}"]`);
 const num = (a) => `${a.n}${a.rep ? ` ${a.rep}` : ''}`;
-const label = (a) => `${num(a)} ${addressData().streets[a.s].name}`;
+const label = (a) => `${num(a)} ${addressData().streets[a.s].label || addressData().streets[a.s].name}`;
 // tournée par défaut, dans l'ordre de passage (ordre alphabétique des rues = ordre des données)
 const tourAddrs = () => addressData().addresses.filter((a) => tourIds().has(a.id));
 
@@ -29,7 +29,8 @@ async function download(page, click, testInfo, name) {
   await dl.saveAs(file);
   return { name: dl.suggestedFilename(), buf: fs.readFileSync(file) };
 }
-const csvLine = (a, statut, motif = '') => [addressData().streets[a.s].name, a.n, a.rep, a.side, statut, motif].join(';');
+const communeOf = (a) => addressData().communes[addressData().streets[a.s].c].name;
+const csvLine = (a, statut, motif = '') => [addressData().streets[a.s].name, a.n, a.rep, communeOf(a), a.side, statut, motif].join(';');
 
 test('synthèse : anomalies par motif, non traitées dans l\'ordre de passage, un toucher montre l\'adresse', async ({ page }) => {
   const errors = trackErrors(page);
@@ -70,7 +71,7 @@ test('rapport CSV et JSON : une ligne par adresse, motifs, sans heure par défau
   expect(csv.name).toMatch(/^rapport-neyron-10-rues-\d{8}\.csv$/);
   expect([...csv.buf.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);  // BOM : Excel lit l'UTF-8
   const lines = csv.buf.toString('utf-8').slice(1).split('\r\n');
-  expect(lines[0]).toBe('rue;numero;complement;cote;statut;motif');
+  expect(lines[0]).toBe('rue;numero;complement;commune;cote;statut;motif');
   expect(lines).toHaveLength(tourTotal() + 2);  // en-tête, une ligne par adresse, fin de ligne finale
   expect(lines[1]).toBe(csvLine(a[0], 'distribuée'));
   expect(lines[4]).toBe(csvLine(a[3], 'anomalie', 'Boîte absente'));
@@ -82,7 +83,7 @@ test('rapport CSV et JSON : une ligne par adresse, motifs, sans heure par défau
   // heures de pointage sur demande, préférence mémorisée
   await page.click('label[for="ctl-hours"]');
   const timed = (await download(page, () => page.click('#ctl-csv'), testInfo, 'h.csv')).buf.toString('utf-8').slice(1).split('\r\n');
-  expect(timed[0]).toBe('rue;numero;complement;cote;statut;motif;heure');
+  expect(timed[0]).toBe('rue;numero;complement;commune;cote;statut;motif;heure');
   expect(timed[1]).toMatch(/;distribuée;;\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
   expect(timed[8]).toMatch(/;non traitée;;$/);
   await page.reload();
@@ -102,7 +103,8 @@ test('rapport CSV et JSON : une ligne par adresse, motifs, sans heure par défau
   expect(json.rues.map((r) => r.rue)).toEqual(tourStreets().map((st) => st.name));
   expect(json.adresses).toHaveLength(tourTotal());
   expect(json.adresses[3]).toEqual({ id: a[3].id, rue: addressData().streets[a[3].s].name, numero: a[3].n,
-    complement: a[3].rep, cote: a[3].side, statut: 'anomalie', motif: 'Boîte absente' });
+    complement: a[3].rep, commune: 'Neyron', cote: a[3].side, statut: 'anomalie', motif: 'Boîte absente' });
+  expect(json.rues.every((r) => r.commune === 'Neyron')).toBe(true);
 
   // un rapport n'est pas une sauvegarde : refusé à l'import, avec un message clair
   await page.setInputFiles('#import-file', testInfo.outputPath('r.json'));

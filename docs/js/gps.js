@@ -1,5 +1,5 @@
-// GPS : suivi de position (watchPosition), conversion GPS -> plan par la transformation affine
-// calculée par le pipeline, bouton localiser / suivre, encart des adresses non faites les plus proches.
+// GPS : suivi de position (watchPosition), conversion GPS -> plan par la transformation calculée par le pipeline
+// (affine + terme du second degré), bouton localiser / suivre, encart des adresses non faites les plus proches.
 
 import { ST_AGAIN, ST_DONE, isTreated } from './store.js';
 import { addressLabel, STATUS_LABELS } from './ui.js';
@@ -23,6 +23,37 @@ export function nearest(addresses, x, y, keep, n = NEARBY_COUNT) {
     .map((a) => ({ a, d: Math.hypot(a.x - x, a.y - y) }))
     .sort((p, q) => p.d - q.d)
     .slice(0, n);
+}
+
+// GPS (WGS84) -> Lambert-93 : affine x = a·lon + b·lat + c, plus p·u² + q·u·v + r·v² (u, v : écart au centre
+// des adresses), qui corrige la courbure de la projection sur plusieurs kilomètres (addresses.json `affine`)
+export function lonLatToL93(affine, lon, lat) {
+  const { x: [a, b, c], y: [d, e, f], o, qx, qy } = affine;
+  let X = a * lon + b * lat + c;
+  let Y = d * lon + e * lat + f;
+  if (o && qx && qy) {
+    const u = lon - o[0];
+    const v = lat - o[1];
+    X += qx[0] * u * u + qx[1] * u * v + qx[2] * v * v;
+    Y += qy[0] * u * u + qy[1] * u * v + qy[2] * v * v;
+  }
+  return [X, Y];
+}
+
+// Lambert-93 -> GPS : inverse de la partie affine, puis corrections du second degré (convergence en 2 ou 3 tours)
+export function l93ToLonLat(affine, X, Y) {
+  const { x: [a, b, c], y: [d, e, f] } = affine;
+  const det = a * e - b * d;
+  let lon = ((X - c) * e - b * (Y - f)) / det;
+  let lat = (a * (Y - f) - d * (X - c)) / det;
+  for (let k = 0; k < 4; k++) {
+    const [px, py] = lonLatToL93(affine, lon, lat);
+    const dx = X - px;
+    const dy = Y - py;
+    lon += (dx * e - b * dy) / det;
+    lat += (a * dy - d * dx) / det;
+  }
+  return { lon, lat };
 }
 
 export class GpsTracker {
@@ -86,8 +117,8 @@ export class GpsTracker {
 
   // GPS (WGS84) -> coordonnées du plan (mètres, nord en haut)
   toPlan(lon, lat) {
-    const { x: [a, b, c], y: [d, e, f] } = this.affine;
-    return [a * lon + b * lat + c - this.frame.x0, this.frame.y1 - (d * lon + e * lat + f)];
+    const [X, Y] = lonLatToL93(this.affine, lon, lat);
+    return [X - this.frame.x0, this.frame.y1 - Y];
   }
 
   _onPosition(p) {

@@ -7,7 +7,7 @@ const { ID, GPS, STREET, addressData, tourIds, tourTotal, trackErrors, openApp, 
 
 const tab = (page, name) => page.locator(`#tabbar [data-tab="${name}"]`);
 const num = (a) => `${a.n}${a.rep ? ` ${a.rep}` : ''}`;
-const label = (a) => `${num(a)} ${addressData().streets[a.s].name}`;
+const label = (a) => `${num(a)} ${addressData().streets[a.s].label || addressData().streets[a.s].name}`;
 const streetAddrs = (name) => {
   const { streets, addresses } = addressData();
   const s = streets.findIndex((st) => st.name === name);
@@ -66,7 +66,7 @@ test('parcours complet hors ligne : préparer un secteur, distribuer, contrôler
   await expect(page.locator('#ctl-done')).toHaveText(String(barry.length - 1 + gare.length));
   await expect(page.locator('#ctl-anom')).toHaveText('1');
   const csv = fs.readFileSync(await download(page, () => page.click('#ctl-csv'), testInfo, 'mardi.csv'), 'utf-8');
-  expect(csv).toContain(`Chemin du Barry;${barry[1].n};${barry[1].rep};${barry[1].side};anomalie;Boîte inaccessible`);
+  expect(csv).toContain(`Chemin du Barry;${barry[1].n};${barry[1].rep};Neyron;${barry[1].side};anomalie;Boîte inaccessible`);
   await page.click('#ctl-close');
   await page.click('#confirm-ok');
   await expect(page.locator('#ctl-done')).toHaveText('0');

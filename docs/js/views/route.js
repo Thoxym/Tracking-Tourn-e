@@ -389,7 +389,7 @@ export class RouteView {
   _streetName(st) {
     const { ui, map } = this.app;
     const a = map.byId.get(st.ids[0]);
-    return a ? ui.streets[a.s].name : 'Rue';
+    return a ? ui.streets[a.s].label : 'Rue';
   }
 
   // « 125, 127, 129 à droite · 144 bis, 144 à gauche » ; une portion : « côté droit : 58 → 90 (17) »

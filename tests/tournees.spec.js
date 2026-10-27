@@ -126,7 +126,7 @@ test('nouvelle tournée composée par rue : côté, plage, retrait', async ({ pa
   await page.click('#se-add');
   await expect(page.locator('#toast-msg')).toHaveText(`Rue de la Gare : ${pairs.length} numéros ajoutés`);
   await expect(page.locator('#prep-summary')).toHaveText(`${pairs.length} adresses · 1 rue`);
-  await expect(streetRow(page, STREET.gare).locator('.vrow-sub')).toHaveText(`${pairs.length}/15 dans la tournée`);
+  await expect(streetRow(page, STREET.gare).locator('.vrow-sub')).toHaveText(`Neyron · ${pairs.length}/15 dans la tournée`);
 
   // côté impair, n° 1 à 9 seulement
   const odd = streetAddrs(STREET.gare, { side: 'impair', from: 1, to: 9 });

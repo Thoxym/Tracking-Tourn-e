@@ -7,7 +7,7 @@ const reasonOf = (page, id) => page.evaluate((id) => window.neyronApp.store.reas
 const visibleActions = (page) => page.evaluate(() => [...document.querySelectorAll('#sheet-actions .act')]
   .filter((b) => !b.hidden).map((b) => b.dataset.st));
 const num = (a) => `${a.n}${a.rep ? ` ${a.rep}` : ''}`;
-const label = (a) => `${num(a)} ${addressData().streets[a.s].name}`;
+const label = (a) => `${num(a)} ${addressData().streets[a.s].label || addressData().streets[a.s].name}`;
 const streetAddrs = (name) => {
   const { streets, addresses } = addressData();
   const s = streets.findIndex((st) => st.name === name);
@@ -42,7 +42,7 @@ test('anomalie en deux touchers depuis le panneau : motif, changement de motif, 
   await page.click('#sheet-actions [data-st="anomalie"]');
   await expect(page.locator('#reason-list .reason[value="inaccessible"]')).toHaveAttribute('aria-pressed', 'true');
   await page.click('#reason-list .reason[value="absente"]');
-  expect(await reasonOf(page, ID.gare28)).toBe('absente');
+  await expect.poll(() => reasonOf(page, ID.gare28)).toBe('absente');
   await page.click('#toast-action');
   await expect.poll(() => reasonOf(page, ID.gare28)).toBe('inaccessible');
   expect(await statusOf(page, ID.gare28)).toBe('anomalie');

@@ -6,11 +6,21 @@ const { DOCS, ID, addressData, total, tourTotal, tourStreets, trackErrors, openA
 
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-test('toute la commune : 941 adresses sur 90 voies, toutes pointables', async ({ page }) => {
+test('trois communes entières : toutes les adresses pointables, rues distinguées par commune', async ({ page }) => {
   const errors = trackErrors(page);
   await openApp(page);
-  const { streets, addresses, presets } = addressData();
-  expect([addresses.length, streets.length]).toEqual([941, 90]);
+  const { streets, addresses, presets, communes } = addressData();
+  expect(communes.map((c) => [c.insee, c.name])).toEqual([
+    ['01275', 'Neyron'], ['01043', 'Beynost'], ['01376', 'Saint-Maurice-de-Beynost']]);
+  // Neyron : 941 adresses sur 90 voies, comme avant l'ajout des deux communes
+  const neyron = streets.filter((st) => st.c === 0);
+  expect([neyron.reduce((n, st) => n + st.count, 0), neyron.length]).toEqual([941, 90]);
+  expect(communes.reduce((n, c) => n + c.count, 0)).toBe(addresses.length);
+  for (const a of addresses) expect(a.id.slice(0, 5)).toBe(communes[streets[a.s].c].insee);
+  // un nom porté par plusieurs communes : libellé suivi de la commune, partout dans l'app
+  const geneve = streets.filter((st) => st.name === 'Route de Genève');
+  expect(geneve.map((st) => st.label)).toEqual(['Route de Genève (Neyron)', 'Route de Genève (Beynost)', 'Route de Genève (Saint-Maurice-de-Beynost)']);
+  expect(streets.filter((st) => st.label).every((st) => streets.filter((o) => o.name === st.name).length > 1)).toBe(true);
 
   await expect(page.locator('#map text.num')).toHaveCount(addresses.length);
   await expect(page.locator('#map text.num.ctx')).toHaveCount(0);

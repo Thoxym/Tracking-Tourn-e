@@ -5,6 +5,7 @@ import csv
 import gzip
 import json
 import math
+import re
 import time
 
 import numpy as np
@@ -35,8 +36,9 @@ def _kind_of(name):
     return None
 
 
-def find_sources(src_dir=config.SOURCES_DIR, insee=config.INSEE):
-    """Repère les fichiers sources par motif ; préfère la version commune (plus petite)."""
+def find_sources(src_dir=config.SOURCES_DIR, insees=tuple(config.INSEES)):
+    """Repère les fichiers sources par motif. Une seule commune : préfère sa version commune (plus petite) ;
+    plusieurs : version département, qui seule les contient toutes."""
     found = {k: [] for k in KINDS}
     if src_dir.is_dir():
         for p in sorted(src_dir.iterdir()):
@@ -46,7 +48,15 @@ def find_sources(src_dir=config.SOURCES_DIR, insee=config.INSEE):
     missing = [k for k in KINDS if not found[k]]
     if missing:
         raise FileNotFoundError(f"sources manquantes dans {src_dir} : {', '.join(missing)}")
-    return {k: sorted(v, key=lambda p: (insee not in p.name, p.name))[0] for k, v in found.items()}
+    if len(insees) == 1:
+        return {k: sorted(v, key=lambda p: (insees[0] not in p.name, p.name))[0] for k, v in found.items()}
+    out = {}
+    for k, v in found.items():
+        dept = [p for p in v if not re.search(r"\d{5}", p.name)]
+        if not dept:
+            raise FileNotFoundError(f"{k} : il faut la version département pour {len(insees)} communes")
+        out[k] = sorted(dept, key=lambda p: p.name)[0]
+    return out
 
 
 def _open_text(path):
@@ -55,49 +65,49 @@ def _open_text(path):
     return open(path, "r", encoding="utf-8", newline="")
 
 
-def _filter_csv(src, dst, insee):
+def _filter_csv(src, dst, insees):
     n = 0
-    needle = f";{insee};"
+    needles = [f";{i};" for i in insees]
     with _open_text(src) as fin, open(dst, "w", encoding="utf-8", newline="\n") as fout:
         header = fin.readline()
         col = header.rstrip("\r\n").split(";").index("code_insee")
         fout.write(header.rstrip("\r\n") + "\n")
         for line in fin:
-            if needle in line and line.split(";")[col] == insee:
+            if any(nd in line for nd in needles) and line.split(";")[col] in insees:
                 fout.write(line.rstrip("\r\n") + "\n")
                 n += 1
     return n
 
 
-def _filter_features(src, dst, insee):
+def _filter_features(src, dst, insees):
     n = 0
-    needles = (f'"commune":"{insee}"', f'"commune": "{insee}"')
+    needles = [f'"commune":"{i}"' for i in insees] + [f'"commune": "{i}"' for i in insees]
     with _open_text(src) as fin, open(dst, "w", encoding="utf-8", newline="\n") as fout:
         for line in fin:
-            if needles[0] in line or needles[1] in line:
+            if any(nd in line for nd in needles):
                 fout.write(line.strip().rstrip(",") + "\n")
                 n += 1
     return n
 
 
-def extract(sources, work_dir=config.WORK_DIR, insee=config.INSEE, force=False, log=print):
-    """Filtre les sources sur la commune, avec un cache dans work/ invalidé si la source change."""
+def extract(sources, work_dir=config.WORK_DIR, insees=tuple(config.INSEES), force=False, log=print):
+    """Filtre les sources sur les communes, avec un cache dans work/ invalidé si la source ou les communes changent."""
     work_dir.mkdir(parents=True, exist_ok=True)
     meta_path = work_dir / "extract-meta.json"
     meta = json.loads(meta_path.read_text("utf-8")) if meta_path.exists() else {}
-    targets = {"addresses": "neyron.csv", "buildings": "bat.jsonl", "parcels": "par.jsonl"}
+    targets = {"addresses": "adresses.csv", "buildings": "bat.jsonl", "parcels": "par.jsonl"}
     out = {}
     for kind, fname in targets.items():
         src, dst = sources[kind], work_dir / fname
         st = src.stat()
-        sig = {"source": src.name, "size": st.st_size, "mtime": int(st.st_mtime), "insee": insee}
+        sig = {"source": src.name, "size": st.st_size, "mtime": int(st.st_mtime), "insee": ",".join(insees)}
         cached = meta.get(kind, {})
         if not force and dst.exists() and {k: cached.get(k) for k in sig} == sig:
             log(f"  {kind:<9} cache   {dst.name} ({cached['count']} lignes)")
         else:
             t = time.perf_counter()
             fn = _filter_csv if kind == "addresses" else _filter_features
-            count = fn(src, dst, insee)
+            count = fn(src, dst, set(insees))
             meta[kind] = {**sig, "count": count}
             log(f"  {kind:<9} extrait {dst.name} ({count} lignes, {time.perf_counter() - t:.0f} s)")
         out[kind] = dst
@@ -156,22 +166,56 @@ def _polygonal(g):
 
 
 def fit_affine(lon, lat, x, y):
-    """Moindres carrés x = a·lon + b·lat + c, y = d·lon + e·lat + f.
+    """Moindres carrés x = a·lon + b·lat + c + p·u² + q·u·v + r·v², de même pour y, avec u = lon - lon0,
+    v = lat - lat0 (centre des adresses). Le terme du second degré corrige la courbure de la projection :
+    sur les 7,5 km des trois communes, l'affine seule s'écarte de 1,2 m, contre 0,1 mm ainsi.
 
-    Ajusté sur des coordonnées centrées (meilleur conditionnement), puis ramené à la forme
-    non centrée utilisée par l'app ; les résidus sont évalués sous cette forme, comme en JS."""
+    Renvoie le dictionnaire `affine` de addresses.json ({x: [a, b, c], y: [d, e, f], o: [lon0, lat0],
+    qx: [p, q, r], qy: [...]}) et les résidus, évalués sous cette forme comme en JS (gps.js)."""
     lon, lat, x, y = (np.asarray(v, dtype=float) for v in (lon, lat, x, y))
-    lon0, lat0 = lon.mean(), lat.mean()
-    A = np.column_stack([lon - lon0, lat - lat0, np.ones_like(lon)])
-    (a, b, c0), *_ = np.linalg.lstsq(A, x, rcond=None)
-    (d, e, f0), *_ = np.linalg.lstsq(A, y, rcond=None)
-    cx = [float(a), float(b), float(c0 - a * lon0 - b * lat0)]
-    cy = [float(d), float(e), float(f0 - d * lon0 - e * lat0)]
-    res = np.hypot(cx[0] * lon + cx[1] * lat + cx[2] - x, cy[0] * lon + cy[1] * lat + cy[2] - y)
-    return cx, cy, res
+    lon0, lat0 = float(lon.mean()), float(lat.mean())
+    u, v = lon - lon0, lat - lat0
+    A = np.column_stack([u, v, np.ones_like(u), u * u, u * v, v * v])
+    (a, b, c0, *qx), *_ = np.linalg.lstsq(A, x, rcond=None)
+    (d, e, f0, *qy), *_ = np.linalg.lstsq(A, y, rcond=None)
+    aff = {"x": [float(a), float(b), float(c0 - a * lon0 - b * lat0)],
+           "y": [float(d), float(e), float(f0 - d * lon0 - e * lat0)],
+           "o": [lon0, lat0], "qx": [float(k) for k in qx], "qy": [float(k) for k in qy]}
+    px, py = apply_affine(aff, lon, lat)
+    return aff, np.hypot(px - x, py - y)
+
+
+def apply_affine(aff, lon, lat):
+    (a, b, c), (d, e, f) = aff["x"], aff["y"]
+    u, v = lon - aff["o"][0], lat - aff["o"][1]
+    (p, q, r), (s, t, w) = aff["qx"], aff["qy"]
+    return (a * lon + b * lat + c + p * u * u + q * u * v + r * v * v,
+            d * lon + e * lat + f + s * u * u + t * u * v + w * v * v)
 
 
 # ------------------------------------------------- association adresse-bâtiment
+
+
+def infer_parcels(points, cads, types, parcel_geoms, parcel_ids):
+    """Parcelles des adresses sans `cad_parcelles` (la plupart à Beynost et Saint-Maurice-de-Beynost) : celle qui
+    contient le point, sinon celles à moins de ASSOC_PARCEL_SNAP_M (point d'entrée posé au portail, juste hors de
+    la parcelle ; à un angle, toutes celles à 1,5 m près de la plus proche). Pas pour les positions « segment »,
+    posées sur l'axe de la rue, sans côté connu. Renvoie (listes d'ids, nombre de parcelles déduites)."""
+    tree = STRtree(parcel_geoms)
+    out, n = [], 0
+    for pt, cad, typ in zip(points, cads, types):
+        if cad or typ == "segment":
+            out.append(cad)
+            continue
+        idx, dist = tree.query_nearest(pt, return_distance=True, max_distance=config.ASSOC_PARCEL_SNAP_M)
+        if not len(idx):
+            out.append([])
+            continue
+        near = tree.query(pt, predicate="dwithin", distance=float(dist.min()) + config.ASSOC_PARCEL_TIE_M)
+        got = [parcel_ids[i] for i in (idx if dist.min() == 0 else near) if parcel_ids[i]]
+        out.append(got)
+        n += bool(got)
+    return out, n
 
 
 def associate(points, cads, parcels_by_id, bld_geoms, bld_types):
@@ -202,11 +246,13 @@ def associate(points, cads, parcels_by_id, bld_geoms, bld_types):
     return out
 
 
-def unaddressed_buildings(bld_geoms, bld_types, linked, parcel_geoms, parcel_ids, addressed, addr_points):
+def unaddressed_buildings(bld_geoms, bld_types, linked, parcel_geoms, parcel_ids, addressed, addr_points,
+                          street_points=None):
     """Bâtiments qui pourraient porter une adresse absente de la BAN : bâti dur d'au moins
     UNADDRESSED_MIN_AREA_M2, lié à aucune adresse, sur une parcelle qu'aucune adresse ne cite
     (`addressed` : ids de parcelles de toutes les adresses de la commune) et loin de tout point d'adresse.
-    Renvoie les index des bâtiments retenus."""
+    `street_points` : adresses posées sur l'axe de la rue (« segment »), sans parcelle connue ; un bâtiment à moins
+    de UNADDRESSED_SEGMENT_DIST_M de l'une d'elles est sans doute le sien. Renvoie les index des bâtiments retenus."""
     areas = shapely.area(bld_geoms)
     cand = [k for k in range(len(bld_geoms)) if k not in linked and bld_types[k] == config.ASSOC_HARD_TYPE
             and areas[k] >= config.UNADDRESSED_MIN_AREA_M2]
@@ -216,12 +262,16 @@ def unaddressed_buildings(bld_geoms, bld_types, linked, parcel_geoms, parcel_ids
     b_idx, p_idx = STRtree(parcel_geoms).query(reps, predicate="within")
     parcel_of = {cand[b]: parcel_ids[p] for b, p in zip(b_idx.tolist(), p_idx.tolist())}
     near = STRtree(addr_points)
+    loose = STRtree(street_points) if street_points is not None and len(street_points) else None
     out = []
     for k in cand:
         pid = parcel_of.get(k)
         if pid is None or pid in addressed:  # hors parcelle de la commune, ou parcelle déjà adressée
             continue
         if len(near.query(bld_geoms[k], predicate="dwithin", distance=config.UNADDRESSED_MIN_DIST_M)):
+            continue
+        if loose is not None and len(loose.query(bld_geoms[k], predicate="dwithin",
+                                                  distance=config.UNADDRESSED_SEGMENT_DIST_M)):
             continue
         out.append(k)
     return out
@@ -278,6 +328,45 @@ def uncadastred_domain(parcels, area_box):
     union = shapely.union_all(shapely.buffer(parcels, config.TRACE_PARCEL_BUFFER_M))
     commune = union.buffer(config.TRACE_CLOSING_M).buffer(-config.TRACE_CLOSING_M)
     return commune.intersection(area_box).difference(union)
+
+
+def commune_limits(parcels, parcel_communes, insees, frame_box):
+    """Limites des communes, à partir de leurs parcelles (fermeture morphologique, comme le domaine non cadastré).
+    Renvoie (lignes dans le cadre, régions dans l'ordre de `insees`). Une limite commune à deux communes n'est
+    tracée qu'une fois : la seconde commune n'ajoute que ce qui est à plus de LIMIT_DEDUP_M des communes déjà
+    tracées. Les bords du cadre ne sont pas des limites."""
+    regions, lines = [], []
+    edge = frame_box.exterior.buffer(config.LIMIT_DEDUP_M)
+    for insee in insees:
+        mine = [g for g, c in zip(parcels, parcel_communes) if c == insee]
+        reg = shapely.Polygon()
+        if mine:
+            union = shapely.union_all(shapely.buffer(mine, config.TRACE_PARCEL_BUFFER_M))
+            closed = union.buffer(config.TRACE_CLOSING_M).buffer(-config.TRACE_CLOSING_M).intersection(frame_box)
+            big = [p for p in _parts(closed) if p.geom_type == "Polygon" and p.area >= config.LIMIT_MIN_AREA_M2]
+            # trous de moins de LIMIT_MIN_AREA_M2 (étangs, voirie large) : pas des limites
+            reg = shapely.union_all([shapely.Polygon(p.exterior, [h for h in p.interiors
+                                                                  if shapely.Polygon(h).area >= config.LIMIT_MIN_AREA_M2])
+                                     for p in big]) if big else reg
+        line = reg.boundary.simplify(config.LIMIT_SIMPLIFY_M).difference(edge)
+        for other in regions:
+            if not other.is_empty:
+                line = line.difference(other.buffer(config.LIMIT_DEDUP_M))
+        regions.append(reg)
+        lines.append(line)
+    out = shapely.union_all([ln for ln in lines if not ln.is_empty])
+    out = shapely.MultiLineString([p for p in _parts(shapely.line_merge(out) if out.geom_type == "MultiLineString" else out)
+                                   if p.geom_type == "LineString" and p.length >= config.LIMIT_MIN_LENGTH_M])
+    return out, regions
+
+
+def commune_label(region, pts, x0, y1):
+    """Position du nom de la commune : le point d'adresse le plus proche du centre des adresses."""
+    if not len(pts):
+        return []
+    c = np.median(pts, axis=0)
+    p = pts[np.argmin(np.hypot(*(pts - c).T))]
+    return [{"x": round(float(p[0]) - x0, 1), "y": round(y1 - float(p[1]), 1)}]
 
 
 def street_trace(pts, gaps, fallback=False):
@@ -375,6 +464,39 @@ def _ring(coords, x0, y1):
     if len(pts) < 3:
         return ""
     return "M" + pts[0] + "L" + " ".join(pts[1:]) + "Z"
+
+
+def tiled_paths(geoms, x0, y1, size):
+    """Paths SVG regroupés par tuile carrée de `size` m (selon le centre de chaque géométrie), pour que l'app ne
+    dessine que les tuiles à l'écran. Renvoie [{b: [xmin, ymin, xmax, ymax] en coordonnées SVG, d}], `b` couvrant
+    toutes les géométries de la tuile (une grande parcelle déborde de sa tuile)."""
+    tiles = {}
+    for g in geoms:
+        if g.is_empty:
+            continue
+        minx, miny, maxx, maxy = g.bounds
+        key = (int((minx + maxx) / 2 - x0) // size, int(y1 - (miny + maxy) / 2) // size)
+        t = tiles.setdefault(key, {"b": [math.inf, math.inf, -math.inf, -math.inf], "d": []})
+        t["b"] = [min(t["b"][0], minx - x0), min(t["b"][1], y1 - maxy),
+                  max(t["b"][2], maxx - x0), max(t["b"][3], y1 - miny)]
+        t["d"].append(svg_path(g, x0, y1))
+    return [{"b": [round(v, 1) for v in t["b"]], "d": "".join(t["d"])} for _, t in sorted(tiles.items())]
+
+
+def svg_lines(geom, x0, y1):
+    """Path SVG ouvert (sans Z) des lignes d'une géométrie linéaire, coordonnées au décimètre."""
+    out = []
+    for ln in _parts(geom):
+        if ln.geom_type != "LineString":
+            continue
+        pts = []
+        for x, y in ln.coords:
+            p = f"{_fmt(x - x0)} {_fmt(y1 - y)}"
+            if not pts or pts[-1] != p:
+                pts.append(p)
+        if len(pts) > 1:
+            out.append("M" + pts[0] + "L" + " ".join(pts[1:]))
+    return "".join(out)
 
 
 def svg_path(geom, x0, y1):

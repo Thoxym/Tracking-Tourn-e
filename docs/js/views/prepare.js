@@ -190,7 +190,7 @@ export class PrepareView {
       const addrs = ui.byStreet[s];
       const rev = isReversed(t, s, ui.keys);
       const [first, last] = rev ? [addrs[addrs.length - 1], addrs[0]] : [addrs[0], addrs[addrs.length - 1]];
-      const name = ui.streets[s].name;
+      const name = ui.streets[s].label;
       const li = document.createElement('li');
       li.className = 'order-row';
       li.dataset.s = s;
@@ -313,13 +313,16 @@ export class PrepareView {
     const dark = ui.isDark();
     const rows = [];
     this.allByStreet.forEach((addrs, i) => {
-      if (this.query && !fold(ui.streets[i].name).includes(this.query)) return;
+      const st = ui.streets[i];
+      // recherche sur le nom et la commune (« beynost » liste les rues de Beynost)
+      if (this.query && !fold(`${st.name} ${st.commune}`).includes(this.query)) return;
       const k = ui.byStreet[i].length;
+      const where = st.commune ? `${st.commune} · ` : '';
       rows.push(streetRow({
-        color: k ? ui.streets[i].colors[dark ? 1 : 0] : 'var(--ctx)',
-        name: ui.streets[i].name,
-        sub: k ? `${k}/${addrs.length} dans la tournée`
-          : `${plural(addrs.length, 'numéro')} · ${formatDistance(ui.streets[i].len || 0)} · hors tournée`,
+        color: k ? st.colors[dark ? 1 : 0] : 'var(--ctx)',
+        name: st.name,
+        sub: k ? `${where}${k}/${addrs.length} dans la tournée`
+          : `${where}${plural(addrs.length, 'numéro')} · ${formatDistance(st.len || 0)} · hors tournée`,
         count: `${k}/${addrs.length}`,
         complete: k === addrs.length,
         onClick: () => this.openEditor(i),
@@ -472,7 +475,7 @@ export class PrepareView {
     this.editing = i;
     const addrs = this.allByStreet[i];
     const even = addrs.filter((a) => a.side === 'pair').length;
-    $('se-title').textContent = this.app.ui.streets[i].name;
+    $('se-title').textContent = this.app.ui.streets[i].label;
     $('se-sub').textContent = `${plural(addrs.length, 'numéro')} (${even} ${agree(even, 'pair')}, `
       + `${addrs.length - even} ${agree(addrs.length - even, 'impair')}) · n° ${addrs[0].n} à ${addrs[addrs.length - 1].n}`;
     $('street-editor').querySelector('input[name="se-side"][value="all"]').checked = true;
@@ -515,7 +518,7 @@ export class PrepareView {
         n += 1;
       }
     }
-    const name = this.app.ui.streets[this.editing].name;
+    const name = this.app.ui.streets[this.editing].label;
     if (!n) return;
     await this.setIds(ids);
     this._preview();

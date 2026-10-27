@@ -111,7 +111,7 @@ test('Préparer : tournée active, rues de la commune, une rue s\'ouvre dans l\'
   await expect(rows).toHaveCount(streets.length);
   const gare = rows.nth(STREET.gare);
   await expect(gare.locator('.vrow-name')).toHaveText('Rue de la Gare');
-  await expect(gare.locator('.vrow-sub')).toHaveText('15/15 dans la tournée');
+  await expect(gare.locator('.vrow-sub')).toHaveText('Neyron · 15/15 dans la tournée');
   await gare.click();
   await expect(page.locator('#street-editor')).toBeVisible();
   await expect(page.locator('#se-title')).toHaveText('Rue de la Gare');

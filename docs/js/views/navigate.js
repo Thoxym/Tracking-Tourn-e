@@ -16,6 +16,7 @@ import { buildLeg, formatDist, instruction, locate, nextManeuver, pointAlong, re
 import { loadRoads } from '../roads.js';
 import { ST_AGAIN, ST_ANOMALY, ST_DONE, isTreated } from '../store.js';
 import { formatDuration } from '../tourplan.js';
+import { l93ToLonLat } from '../gps.js';
 import { Simulator } from '../simulator.js';
 import { addressLabel } from '../ui.js';
 import { guard, num, plural, showAddress } from './common.js';
@@ -82,13 +83,9 @@ const span = (cls, text) => {
   return s;
 };
 
-// plan (repère SVG du cadre) -> GPS, par inversion de la transformation affine des données
+// plan (repère SVG du cadre) -> GPS, par inversion de la transformation des données
 function toLonLat(data, x, y) {
-  const { x: [a, b, c], y: [d, e, f] } = data.affine;
-  const X = x + data.frame.x0;
-  const Y = data.frame.y1 - y;
-  const det = a * e - b * d;
-  return { lon: ((X - c) * e - b * (Y - f)) / det, lat: (a * (Y - f) - d * (X - c)) / det };
+  return l93ToLonLat(data.affine, x + data.frame.x0, data.frame.y1 - y);
 }
 
 export class NavigateView {
@@ -597,7 +594,7 @@ export class NavigateView {
   _streetName(s) {
     const { map, ui } = this.app;
     const a = map.byId.get(s.ids[0]);
-    return a ? ui.streets[a.s].name : '';
+    return a ? ui.streets[a.s].label : '';
   }
 
   renderBanner() {
@@ -674,7 +671,7 @@ export class NavigateView {
       li.className = `nav-addr${treated ? ' treated' : ''}`;
       li.dataset.id = id;
       const main = span('nav-addr-main', '');
-      main.append(span('nav-addr-name', num(a)), span('nav-addr-sub', `${s.sides[i] > 0 ? 'à droite' : 'à gauche'} · ${ui.streets[a.s].name}`));
+      main.append(span('nav-addr-name', num(a)), span('nav-addr-sub', `${s.sides[i] > 0 ? 'à droite' : 'à gauche'} · ${ui.streets[a.s].label}`));
       const tags = ui.tagText(id);
       if (tags) main.append(span('tag-line', tags));
       li.append(main);

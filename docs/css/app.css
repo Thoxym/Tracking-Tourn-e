@@ -20,6 +20,7 @@
     inset 0 1px 0.5px rgba(255, 255, 255, 0.85), inset 0 -0.5px 0.5px rgba(255, 255, 255, 0.35);
   --lens: rgba(0, 0, 0, 0.07);             /* onglet choisi */
   --parcel: #c9ccd1;
+  --limit: #8e6fc4;
   --bld: #e1e0dc;
   --bld-stroke: #c2c1bc;
   --halo: #f7f6f2;
@@ -78,6 +79,7 @@
       inset 0 1px 0.5px rgba(255, 255, 255, 0.18), inset 0 -0.5px 0.5px rgba(255, 255, 255, 0.06);
     --lens: rgba(255, 255, 255, 0.14);
     --parcel: #3a3c40;
+    --limit: #a58ad6;
     --bld: #2c2d30;
     --bld-stroke: #45474b;
     --halo: #141517;
@@ -122,6 +124,7 @@
     inset 0 1px 0.5px rgba(255, 255, 255, 0.18), inset 0 -0.5px 0.5px rgba(255, 255, 255, 0.06);
   --lens: rgba(255, 255, 255, 0.14);
   --parcel: #3a3c40;
+  --limit: #a58ad6;
   --bld: #2c2d30;
   --bld-stroke: #45474b;
   --halo: #141517;
@@ -253,6 +256,28 @@ code { font: 13px ui-monospace, "SF Mono", Menlo, Consolas, monospace; backgroun
 }
 
 .trace { fill: var(--sc); fill-opacity: 0.28; stroke: none; }
+
+/* limites des communes (tirets) et noms des communes, en vue d'ensemble seulement */
+.limits {
+  fill: none;
+  stroke: var(--limit);
+  stroke-width: 1.6px;
+  stroke-dasharray: 7 5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.clabel {
+  fill: var(--limit);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-anchor: middle;
+  dominant-baseline: central;
+  stroke: var(--halo);
+  stroke-width: 0.3em;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.map:not(.z-low) .l-communes { display: none; }
 
 .bld-other {
   fill: var(--bld);

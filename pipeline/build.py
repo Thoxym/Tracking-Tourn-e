@@ -68,25 +68,25 @@ def build_data(force_extract=False, preview=False):
     sources = geo.find_sources()
     for k, p in sources.items():
         log(f"  {k:<9} {p.name}")
-    log("Extraction 01275")
+    log(f"Extraction {', '.join(c['name'] + ' (' + c['insee'] + ')' for c in config.COMMUNES)}")
     work = geo.extract(sources, force=force_extract, log=log)
 
-    # --- adresses de la commune et transformation affine
+    # --- adresses des communes et transformation affine
     rows = geo.read_addresses(work["addresses"])
     if not rows:
-        raise BuildError("aucune adresse pour la commune")
+        raise BuildError("aucune adresse pour les communes")
     coords = np.array([[_num(r["lon"]), _num(r["lat"]), _num(r["x"]), _num(r["y"])] for r in rows])
     ok = ~np.isnan(coords).any(axis=1)
-    cx, cy, res = geo.fit_affine(*coords[ok].T)
-    log(f"Affine GPS -> Lambert-93 sur {ok.sum()} adresses : résidu max {res.max():.3f} m, moyen {res.mean():.3f} m")
+    aff, res = geo.fit_affine(*coords[ok].T)
+    log(f"Transformation GPS -> Lambert-93 (second degré) sur {ok.sum()} adresses : résidu max {res.max():.3f} m, moyen {res.mean():.3f} m")
     if res.max() > config.AFFINE_MAX_RESIDUAL_M:
         raise BuildError(f"résidu affine {res.max():.3f} m > {config.AFFINE_MAX_RESIDUAL_M} m")
     px, py = geo.lonlat_to_l93(coords[ok, 0], coords[ok, 1])
     d = np.hypot(px - coords[ok, 2], py - coords[ok, 3])
     log(f"  contrôle BAN x/y vs pyproj(lon/lat) : écart max {d.max():.3f} m")
 
-    # --- toute la commune : une rue par voie, dans l'ordre alphabétique
-    kept = [r for r in rows if r["type_position"] in config.ADDRESS_TYPES]
+    # --- communes entières : une rue par voie (commune + nom), dans l'ordre alphabétique
+    kept = [r for r in rows if r["type_position"] not in config.ADDRESS_EXCLUDED_TYPES]
     # une adresse peut figurer deux fois (deux entrées) ; l'id BAN est la clé de progression : on garde la première
     first = {}
     for r in kept:
@@ -97,17 +97,34 @@ def build_data(force_extract=False, preview=False):
         gap = math.hypot(float(r["x"]) - float(o["x"]), float(r["y"]) - float(o["y"]))
         log(f"  doublon BAN ignoré : {r['numero']}{r['rep']} {r['nom_voie']} ({r['id']}, à {gap:.0f} m de la première)")
     kept = list(first.values())
-    names = sorted({r["nom_voie"] for r in kept}, key=street_sort_key)
-    s_of = {n: i for i, n in enumerate(names)}
-    addrs = [{"row": r, "s": s_of[r["nom_voie"]], "n": int(r["numero"]), "rep": r["rep"].strip().lower(),
-              "X": float(r["x"]), "Y": float(r["y"]), "ctx": False} for r in kept]
+    c_of = {c["insee"]: k for k, c in enumerate(config.COMMUNES)}
+    voies = sorted({(r["code_insee"], r["nom_voie"]) for r in kept},
+                   key=lambda v: (street_sort_key(v[1]), c_of[v[0]]))
+    s_of = {v: i for i, v in enumerate(voies)}
+    names = [n for _, n in voies]
+    commune_of = [c_of[c] for c, _ in voies]
+    # un nom porté par plusieurs communes (Route de Genève…) : libellé suivi de la commune
+    shared = {n for n in names if names.count(n) > 1}
+    display = [f"{n} ({config.COMMUNES[c]['name']})" if n in shared else n for n, c in zip(names, commune_of)]
+    addrs = [{"row": r, "s": s_of[(r["code_insee"], r["nom_voie"])], "n": int(r["numero"]),
+              "rep": r["rep"].strip().lower(), "X": float(r["x"]), "Y": float(r["y"]), "ctx": False} for r in kept]
     counts = [0] * len(names)
     for a in addrs:
         counts[a["s"]] += 1
-    log(f"Commune : {len(addrs)} adresses ({', '.join(sorted(config.ADDRESS_TYPES))}) sur {len(names)} voies "
-        f"(attendu : {config.EXPECTED_ADDRESSES} sur {config.EXPECTED_STREETS}) ; écartées : {len(rows) - len(kept)}")
-    if (len(addrs), len(names)) != (config.EXPECTED_ADDRESSES, config.EXPECTED_STREETS):
-        raise BuildError("totaux de la commune différents de EXPECTED_ADDRESSES / EXPECTED_STREETS")
+    log(f"Communes : {len(addrs)} adresses sur {len(names)} voies ; écartées : {len(rows) - len(kept)} "
+        f"({', '.join(sorted({r['type_position'] for r in rows if r['type_position'] in config.ADDRESS_EXCLUDED_TYPES}))})")
+    bad = []
+    for k, c in enumerate(config.COMMUNES):
+        got = (sum(1 for a in addrs if commune_of[a["s"]] == k), sum(1 for x in commune_of if x == k))
+        exp = c["expected"]
+        log(f"  {c['name']:<26} {got[0]:>5} adresses, {got[1]:>4} voies"
+            + (f" (attendu : {exp[0]}, {exp[1]})" if exp else " (non vérifié)") + ("   <-- ÉCART" if exp and got != tuple(exp) else ""))
+        if exp and got != tuple(exp):
+            bad.append(c["name"])
+    if bad:
+        raise BuildError(f"totaux différents des attendus (config.COMMUNES) : {', '.join(bad)}")
+    if shared:
+        log(f"  noms portés par plusieurs communes : {', '.join(sorted(shared, key=street_sort_key))}")
 
     # --- tournées prédéfinies
     presets = []
@@ -115,9 +132,10 @@ def build_data(force_extract=False, preview=False):
         log(f"Tournée prédéfinie « {pr['name']} » (id {pr['id']})")
         ids, bad = set(), []
         for spec in pr["streets"]:
-            if spec["name"] not in s_of:
-                raise BuildError(f"voie absente de la BAN : {spec['name']}")
-            sel = [a for a in addrs if a["s"] == s_of[spec["name"]]
+            key = (spec.get("commune", pr["commune"]), spec["name"])
+            if key not in s_of:
+                raise BuildError(f"voie absente de la BAN : {spec['name']} ({key[0]})")
+            sel = [a for a in addrs if a["s"] == s_of[key]
                    and spec.get("min", -1) <= a["n"] <= spec.get("max", 10**9)]
             ids.update(a["row"]["id"] for a in sel)
             ok_count = len(sel) == spec["expected"]
@@ -156,25 +174,32 @@ def build_data(force_extract=False, preview=False):
     parcels_by_id = {p["id"]: g for p, g in zip(pprops, parcels) if p.get("id")}
     pts = shapely.points(np.array([[a["X"], a["Y"]] for a in addrs]))
     cads = [[c for c in a["row"]["cad_parcelles"].split("|") if c] for a in addrs]
+    no_cad = sum(not c for c in cads)
+    cads, inferred = geo.infer_parcels(pts, cads, [a["row"]["type_position"] for a in addrs],
+                                       parcels, [p.get("id") for p in pprops])
+    for a, c in zip(addrs, cads):
+        a["cad"] = c
     assoc = geo.associate(pts, cads, parcels_by_id, blds, [p.get("type") for p in bprops])
     methods = {}
     for a, (bi, meth) in zip(addrs, assoc):
         a["bi"] = bi
         methods[meth] = methods.get(meth, 0) + 1
     n_assoc = sum(a["bi"] is not None for a in addrs)
-    no_cad = sum(not c for c in cads)
     log(f"Association : {n_assoc} / {len(addrs)} adresses liées à un bâtiment "
-        f"({', '.join(f'{k} {v}' for k, v in sorted(methods.items()))}) ; sans cad_parcelles : {no_cad}")
+        f"({', '.join(f'{k} {v}' for k, v in sorted(methods.items()))}) ; sans cad_parcelles : {no_cad}, "
+        f"dont {inferred} rattachées à la parcelle qui contient le point ou la touche")
     missing = [a for a in addrs if a["bi"] is None]
     if missing:
         shown = ", ".join(f"{a['n']}{a['rep']} {names[a['s']]}" for a in missing[:12])
         log(f"  sans bâtiment : {len(missing)} ({shown}{', …' if len(missing) > 12 else ''})")
 
     # --- bâtiments sans adresse : parcelles citées et points de toutes les adresses de la commune (tous types)
-    addressed = {c for r in rows for c in r["cad_parcelles"].split("|") if c}
+    addressed = {c for r in rows for c in r["cad_parcelles"].split("|") if c} | {c for a in addrs for c in a["cad"]}
     orphans = geo.unaddressed_buildings(blds, [p.get("type") for p in bprops], {a["bi"] for a in addrs},
                                         parcels, [p.get("id") for p in pprops], addressed,
-                                        shapely.points(coords[ok][:, 2:4]))
+                                        shapely.points(coords[ok][:, 2:4]),
+                                        shapely.points(np.array([[a["X"], a["Y"]] for a in addrs
+                                                                 if a["row"]["type_position"] == "segment"]).reshape(-1, 2)))
     unaddressed = []
     for k in orphans:
         rp = shapely.point_on_surface(blds[k])
@@ -189,6 +214,14 @@ def build_data(force_extract=False, preview=False):
     t = time.perf_counter()
     gaps = geo.uncadastred_domain(parcels, gbox)
     log(f"Domaine non cadastré : {gaps.area / 1e4:.1f} ha ({time.perf_counter() - t:.0f} s)")
+    t = time.perf_counter()
+    pcomm = [p.get("commune") for p in pprops]
+    limits, regions = geo.commune_limits(parcels, pcomm, config.INSEES, shapely.box(x0, y0, x1, y1))
+    commune_labels = []
+    for c, reg in zip(config.COMMUNES, regions):
+        pts = np.array([[a["X"], a["Y"]] for a in addrs if commune_of[a["s"]] == c_of[c["insee"]]])
+        commune_labels.append(geo.commune_label(reg, pts, x0, y1))
+    log(f"Limites des communes : {limits.length / 1000:.1f} km de trait ({time.perf_counter() - t:.0f} s)")
     t = time.perf_counter()
     traces, labels, lengths, modes = {}, {}, {}, {}
     for i, name in enumerate(names):
@@ -211,10 +244,11 @@ def build_data(force_extract=False, preview=False):
     bid = {bi: f"b{bi}" for bi in linked}
     others = np.array([g for k, g in enumerate(blds) if k not in bid], dtype=object)
     plan = {
-        "parcels": "".join(geo.svg_path(g, x0, y1) for g in parcels),
-        "buildingsOther": "".join(geo.svg_path(g, x0, y1) for g in others),
+        "parcels": geo.tiled_paths(parcels, x0, y1, config.TILE_M),
+        "buildingsOther": geo.tiled_paths(others, x0, y1, config.TILE_M),
         "buildings": {bid[bi]: geo.svg_path(blds[bi], x0, y1) for bi in linked},
         "traces": {str(i): geo.svg_path(tr, x0, y1) for i, tr in traces.items()},
+        "limits": geo.svg_lines(limits, x0, y1),
     }
     addrs.sort(key=lambda a: (a["s"], a["n"], rep_rank(a["rep"])))
     out_addrs = [{
@@ -227,13 +261,16 @@ def build_data(force_extract=False, preview=False):
     ids = [a["id"] for a in out_addrs]
     if len(set(ids)) != len(ids):
         raise BuildError("identifiants BAN en double")
-    streets = [{"i": i, "name": name, "colors": list(config.PALETTE[color[i]]), "count": counts[i],
+    streets = [{"i": i, "name": name, "c": commune_of[i], **({"label": display[i]} if display[i] != name else {}),
+                "colors": list(config.PALETTE[color[i]]), "count": counts[i],
                 "len": lengths[i], "labels": labels[i]} for i, name in enumerate(names)]
     presets_out = [{"id": pr["id"], "name": pr["name"], "ids": [a["id"] for a in out_addrs if a["id"] in pr["ids"]]}
                    for pr in presets]
     meta = {
         "frame": {"x0": x0, "y1": y1, "W": W, "H": H},
-        "affine": {"x": cx, "y": cy, "maxResidual_m": round(float(res.max()), 3)},
+        "affine": {**aff, "maxResidual_m": round(float(res.max()), 4)},
+        "communes": [{"insee": c["insee"], "name": c["name"], "count": sum(1 for a in addrs if commune_of[a["s"]] == k),
+                      "labels": commune_labels[k]} for k, c in enumerate(config.COMMUNES)],
     }
     plan_text = "{" + ",\n".join(f"{_j(k)}:{_j(v)}" for k, v in plan.items()) + "}\n"
     body = _j({**meta, "streets": streets, "presets": presets_out, "unaddressed": unaddressed,
@@ -252,7 +289,7 @@ def build_data(force_extract=False, preview=False):
         f"plan.json {len(plan_text.encode()) / 1024:.0f} Ko ; version des données {version}")
 
     if preview:
-        render_preview(parcels, blds, linked, traces, addrs, x0, y1, W, H, streets)
+        render_preview(parcels, blds, linked, traces, addrs, x0, y1, W, H, streets, limits)
 
     # --- réseau routier (itinéraire)
     if (config.SOURCES_DIR / config.ROADS_BDTOPO).exists() and (config.SOURCES_DIR / config.ROADS_OSM).exists():
@@ -260,7 +297,7 @@ def build_data(force_extract=False, preview=False):
         street_of_key = {key_of(a): a["s"] for a in addrs}
         try:
             roads.build([{"id": a["row"]["id"], "key": key_of(a), "X": a["X"], "Y": a["Y"],
-                          "cad": [c for c in a["row"]["cad_parcelles"].split("|") if c],
+                          "cad": a["cad"],
                           "street": names[a["s"]], "label": f"{a['n']}{a['rep']} {names[a['s']]}"} for a in addrs],
                         parcels_by_id, x0, y1, W, H, street_of_key, names, log, preview=preview)
         except roads.RoadsError as e:
@@ -275,7 +312,7 @@ def build_data(force_extract=False, preview=False):
 # --------------------------------------------------------------------- aperçu
 
 
-def render_preview(parcels, blds, linked, traces, addrs, x0, y1, W, H, streets, width=2000):
+def render_preview(parcels, blds, linked, traces, addrs, x0, y1, W, H, streets, limits=None, width=3000):
     from PIL import Image, ImageDraw
 
     k = width / W
@@ -313,6 +350,8 @@ def render_preview(parcels, blds, linked, traces, addrs, x0, y1, W, H, streets, 
         col = streets[a["s"]]["colors"][0]
         d.ellipse([x - 4, y - 4, x + 4, y + 4], fill=col, outline="#000000")
         d.text((x + 5, y - 6), f"{a['n']}{a['rep']}", fill="#000000")
+    for ln in geo._parts(limits) if limits is not None else []:
+        d.line(xy(ln.coords), fill="#8000ff", width=4)
     for st in streets:  # étiquettes : trait dans l'orientation du texte
         for lb in st["labels"]:
             x, y, a = lb["x"] * k, lb["y"] * k, math.radians(lb["a"])

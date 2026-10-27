@@ -32,7 +32,7 @@ function rows(groups, streets, passage, hours) {
   return groups.flatMap(({ addrs }) => addrs.map((a) => {
     const st = passage.state.get(a.id) || ST_TODO;
     const r = {
-      id: a.id, rue: streets[a.s].name, numero: a.n, complement: a.rep, cote: a.side,
+      id: a.id, rue: streets[a.s].name, numero: a.n, complement: a.rep, commune: streets[a.s].commune || '', cote: a.side,
       statut: REPORT_STATUS[st], motif: st === ST_ANOMALY ? reasonLabel(passage.reasons.get(a.id)) : '',
     };
     if (hours) r.heure = st !== ST_TODO && passage.times.has(a.id) ? stamp(passage.times.get(a.id)) : '';
@@ -53,7 +53,7 @@ function totals(list) {
 
 // CSV : séparateur « ; », BOM UTF-8 et fins de ligne CRLF (ouverture directe dans Excel en français)
 export function reportCsv({ groups, streets, passage, hours = false }) {
-  const cols = ['rue', 'numero', 'complement', 'cote', 'statut', 'motif', ...(hours ? ['heure'] : [])];
+  const cols = ['rue', 'numero', 'complement', 'commune', 'cote', 'statut', 'motif', ...(hours ? ['heure'] : [])];
   const lines = rows(groups, streets, passage, hours).map((r) => cols.map((c) => csvCell(r[c])).join(';'));
   return `﻿${[cols.join(';'), ...lines].join('\r\n')}\r\n`;
 }
@@ -64,8 +64,9 @@ export function reportJson({ tour, groups, streets, passage, hours = false, from
   const reasons = {};
   for (const r of list) if (r.motif) reasons[r.motif] = (reasons[r.motif] || 0) + 1;
   const byStreet = groups.map(({ s }) => {
-    const t = totals(list.filter((r) => r.rue === streets[s].name));
-    return { rue: streets[s].name, ...t };
+    const { name, commune = '' } = streets[s];
+    const t = totals(list.filter((r) => r.rue === name && r.commune === commune));
+    return { rue: name, commune, ...t };
   });
   const out = {
     app: 'neyron-tournees',

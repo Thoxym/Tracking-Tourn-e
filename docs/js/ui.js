@@ -18,7 +18,7 @@ const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
 const SVGNS = 'http://www.w3.org/2000/svg';
 
 export function addressLabel(a, streets) {
-  return `${a.n}${a.rep ? ` ${a.rep}` : ''} ${streets[a.s].name}`;
+  return `${a.n}${a.rep ? ` ${a.rep}` : ''} ${streets[a.s].label}`;
 }
 
 function icon(paths) {
@@ -175,7 +175,7 @@ export class UI {
     if (!left.length) return null;
     const again = left.filter((a) => this.store.status(a.id) === ST_AGAIN).length;
     const anom = this.byStreet[i].filter((a) => this.store.status(a.id) === ST_ANOMALY).length;
-    const name = this.streets[i].name;
+    const name = this.streets[i].label;
     const msg = `Marquer ${left.length === 1 ? 'le numéro restant' : `les ${left.length} numéros restants`} de « ${name} » comme distribués ?`
       + (again ? ` (dont ${again} à repasser)` : '')
       + (anom ? ` ${anom === 1 ? 'L\'anomalie signalée est conservée' : `Les ${anom} anomalies signalées sont conservées`}.` : '');
@@ -190,7 +190,7 @@ export class UI {
     const addrs = action.ids.map((id) => this.map.byId.get(id)).filter(Boolean);
     const what = addrs.length === 1
       ? addressLabel(addrs[0], this.streets)
-      : `${[...new Set(addrs.map((a) => this.streets[a.s].name))].join(', ')}, ${addrs.length} numéros`;
+      : `${[...new Set(addrs.map((a) => this.streets[a.s].label))].join(', ')}, ${addrs.length} numéros`;
     return `${what} (${statusText(action.st, action.why)})`;
   }
 
@@ -262,7 +262,7 @@ export class UI {
       const input = document.createElement('input');
       input.type = 'checkbox';
       input.checked = true;
-      input.setAttribute('aria-label', `Afficher ${st.name}`);
+      input.setAttribute('aria-label', `Afficher ${st.label}`);
       const swatch = document.createElement('span');
       swatch.className = 'swatch';
       check.append(input, swatch);
@@ -274,7 +274,7 @@ export class UI {
       const name = document.createElement('button');
       name.type = 'button';
       name.className = 'lg-name';
-      name.textContent = st.name;
+      name.textContent = st.label;
       name.addEventListener('click', () => this.selectStreet(this.map.selectedStreet === i ? null : i));
 
       const count = document.createElement('span');
@@ -292,12 +292,12 @@ export class UI {
       all.type = 'button';
       all.className = 'lg-all';
       all.title = 'Toute la rue distribuée';
-      all.setAttribute('aria-label', `Toute la rue distribuée : ${st.name}`);
+      all.setAttribute('aria-label', `Toute la rue distribuée : ${st.label}`);
       all.append(icon(['M2 12.5l4.5 4.5L16 7.5', 'M9 16.5l.5.5L19 7.5']));
       all.addEventListener('click', () => this.markStreet(i));
 
       li.append(check, name, count, bar, all);
-      li.dataset.key = fold(st.name);
+      li.dataset.key = fold(st.label);
       list.append(li);
       return li;
     });
@@ -451,7 +451,7 @@ export class UI {
   _fillSheet(a) {
     const st = this.store.status(a.id);
     $('sheet-title').textContent = addressLabel(a, this.streets);
-    $('sheet-sub').textContent = [a.ld, `côté ${a.side}`].filter(Boolean).join(' · ');
+    $('sheet-sub').textContent = [this.streets[a.s].commune, a.ld, `côté ${a.side}`].filter(Boolean).join(' · ');
     const badge = $('sheet-status');
     badge.textContent = st === ST_ANOMALY ? `anomalie : ${reasonLabel(this.store.reason(a.id)).toLowerCase()}` : STATUS_LABELS[st];
     badge.className = `badge st-${st}`;
