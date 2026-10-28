@@ -245,14 +245,19 @@ code { font: 13px ui-monospace, "SF Mono", Menlo, Consolas, monospace; backgroun
   display: block;
   width: 100%;
   height: 100%;
+  transform-origin: 50% 50%;
+  will-change: transform;    /* calque à part : déplacé comme une image pendant les gestes, sans repeindre le SVG */
 }
 #map svg > g { pointer-events: none; }  /* les taps sont résolus en JS : pas de hit-test SVG */
 
+/* tracés lourds (parcelles, bâtiments sans adresse, limites, itinéraire) : épaisseur en unités du plan, --u = un pixel,
+   posé par map.js sur leurs calques à chaque zoom (non-scaling-stroke y coûte cher dans WebKit). Les petits éléments
+   nombreux (points, bâtiments liés, pastilles) gardent non-scaling-stroke : changer --u sur leurs calques
+   recalculerait des milliers de styles. */
 .parcels {
   fill: none;
   stroke: var(--parcel);
-  stroke-width: 0.7px;
-  vector-effect: non-scaling-stroke;
+  stroke-width: calc(0.7 * var(--u, 1px));
 }
 
 .trace { fill: var(--sc); fill-opacity: 0.28; stroke: none; }
@@ -261,10 +266,8 @@ code { font: 13px ui-monospace, "SF Mono", Menlo, Consolas, monospace; backgroun
 .limits {
   fill: none;
   stroke: var(--limit);
-  stroke-width: 1.6px;
-  stroke-dasharray: 7 5;
+  stroke-width: calc(1.6 * var(--u, 1px));  /* tirets : posés par map.js */
   stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
 }
 .clabel {
   fill: var(--limit);
@@ -283,8 +286,7 @@ code { font: 13px ui-monospace, "SF Mono", Menlo, Consolas, monospace; backgroun
   fill: var(--bld);
   fill-rule: evenodd;
   stroke: var(--bld-stroke);
-  stroke-width: 0.5px;
-  vector-effect: non-scaling-stroke;
+  stroke-width: calc(0.5 * var(--u, 1px));
 }
 .bld {
   fill: var(--sc);
@@ -383,9 +385,9 @@ code { font: 13px ui-monospace, "SF Mono", Menlo, Consolas, monospace; backgroun
 .gps-dot { stroke: var(--gps); stroke-width: 13px; }
 
 /* itinéraire : tracé bleu sur liseré, arrêts numérotés de taille constante */
-.route-casing, .route-line { fill: none; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.route-casing { stroke: var(--halo); stroke-width: 9px; }
-.route-line { stroke: var(--accent); stroke-width: 5px; opacity: 0.9; }
+.route-casing, .route-line { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.route-casing { stroke: var(--halo); stroke-width: calc(9 * var(--u, 1px)); }
+.route-line { stroke: var(--accent); stroke-width: calc(5 * var(--u, 1px)); opacity: 0.9; }
 .route-stop-ring, .route-stop-dot { fill: none; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .route-stop-ring { stroke: #ffffff; stroke-width: 24px; }
 .route-stop-dot { stroke: var(--accent); stroke-width: 20px; }
@@ -411,21 +413,24 @@ code { font: 13px ui-monospace, "SF Mono", Menlo, Consolas, monospace; backgroun
 .route-stop.current .route-stop-dot { stroke: var(--repasser); }
 .route-stop.current .route-stop-ring { stroke-width: 28px; }
 .route-stop.done { opacity: 0.45; }
-.route-line.ahead { stroke-width: 7px; opacity: 1; }
-.route-casing.ahead { stroke-width: 11px; }
+.route-line.ahead { stroke-width: calc(7 * var(--u, 1px)); opacity: 1; }
+.route-casing.ahead { stroke-width: calc(11 * var(--u, 1px)); }
 
 /* zoom faible : points à la place des numéros, pas d'étiquettes */
 .map.z-low .l-numbers, .map.z-low .l-select { display: none; }
 .map:not(.z-low) .l-dots { display: none; }
 .map.z-min .l-labels { display: none; }
+/* niveaux de détail : parcelles à partir de 0,5 px/m ; en vue d'ensemble (moins de 0,25 px/m), ni bâtiments ni points
+   hors tournée (gardés pendant la composition sur la carte, pour voir où ajouter) */
+.map.z-mid .l-parcels { display: none; }
+.map.z-far .l-buildings { display: none; }
+#app:not([data-mode="select"]) .map.z-far .dot.out { display: none; }
 
 /* rue masquée / rue sélectionnée */
 .s.off .trace, .s.off .slabel, .s.off .dot, .s.off .num { display: none; }
 .s.off .bld { fill: var(--bld); fill-opacity: 1; stroke: var(--bld-stroke); stroke-opacity: 1; }
 .map.has-sel .s:not(.sel) { opacity: 0.22; }
 .map.has-sel .l-traces .s.sel .trace { fill-opacity: 0.4; }
-
-.map.moving { shape-rendering: optimizeSpeed; text-rendering: optimizeSpeed; }
 
 /* ------------------------------------------------- boutons posés sur la carte */
 

@@ -107,20 +107,31 @@ test('démarrer, consignes, arrivée, arrêt suivant automatique, annuler, saute
 test('hors itinéraire : nouveau trajet jusqu\'à l\'arrêt', async ({ page }) => {
   await openApp(page);
   await startNav(page);
-  await page.evaluate(() => { window.neyronApp.nav.offRouteMs = 0; });
+  await page.evaluate(() => {
+    window.neyronApp.nav.offRouteMs = 0;
+    // toasts émis : le refus du vrai GPS (WebKit, sans autorisation) peut remplacer « Itinéraire recalculé » à l'écran
+    const ui = window.neyronApp.ui;
+    const toast = ui.toast.bind(ui);
+    window.__toasts = [];
+    ui.toast = (msg, opts) => (window.__toasts.push(msg), toast(msg, opts));
+  });
   const [x, y] = await stopPoint(page);
   await simulate(page, x + 120, y + 90);
   await expect.poll(async () => (await nav(page)).total).not.toBeNull();
   const before = (await nav(page)).total;
-  // à mi-chemin sur le tracé, puis 80 m à côté
-  const [mx, my] = await page.evaluate(() => {
+  // à mi-chemin sur le tracé, puis 80 m à côté, perpendiculairement au tracé (le trajet dépend du budget de calcul :
+  // un décalage fixe peut retomber près d'une autre partie du tracé)
+  const [mx, my, nx, ny] = await page.evaluate(() => {
     const pts = window.neyronApp.nav.leg.pts;
-    const q = pts[Math.floor(pts.length / 2)];
-    return [q.x, q.y];
+    const i = Math.floor(pts.length / 2);
+    const a = pts[Math.max(0, i - 1)];
+    const b = pts[Math.min(pts.length - 1, i + 1)];
+    const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return [pts[i].x, pts[i].y, -(b.y - a.y) / l, (b.x - a.x) / l];
   });
   await simulate(page, mx, my);
-  await simulate(page, mx + 60, my + 50);
-  await expect(page.locator('#toast-msg')).toHaveText('Itinéraire recalculé');
+  await simulate(page, mx + 80 * nx, my + 80 * ny);
+  await expect.poll(() => page.evaluate(() => window.__toasts.includes('Itinéraire recalculé'))).toBe(true);
   expect((await nav(page)).total).not.toBe(before);
 });
 

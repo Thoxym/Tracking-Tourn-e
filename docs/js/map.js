@@ -2,6 +2,9 @@
 // gestes (glisser, pincer, molette, clavier) et résolution des taps sur les numéros.
 // Seul ce qui est près de l'écran est dessiné (tuiles de parcelles et de bâtiments, cases de numéros) : trois
 // communes, c'est 3 858 numéros et 12 000 parcelles, que le moteur repeindrait sinon à chaque image de zoom.
+// Pendant un geste ou une animation, le dernier dessin est seulement déplacé et mis à l'échelle (transformation CSS,
+// composée par la carte graphique) ; le plan n'est redessiné qu'au lâcher, ou de loin en loin si des bords vides
+// apparaissent. En vue d'ensemble, moins de détails : ni parcelles, ni bâtiments, ni points hors tournée.
 // Rotation (carte orientée dans le sens de la marche, navigation) : un groupe racine tourne autour du centre de la vue ;
 // les conversions écran <-> plan en tiennent compte, numéros et noms de rues restent droits.
 
@@ -17,6 +20,9 @@ const VIEW_MARGIN_M = 200;     // le centre de la vue reste à moins de 200 m du
 const CELL_M = 250;            // numéros, points, bâtiments liés et noms de rues regroupés par case de 250 m
 const CELL_PAD_M = 80;         // débord d'une case (texte, bâtiment plus grand que la case)
 const CULL_PAD_PX = 120;       // marge autour de l'écran dessinée d'avance (glisser sans trou)
+const K_BUILDINGS = 0.25;      // en dessous : ni bâtiments, ni points hors tournée (vue d'ensemble)
+const K_PARCELS = 0.5;         // en dessous : pas de parcelles
+const DRAW_GAP_MS = [200, 1200]; // pendant un geste : nouveau dessin au plus toutes les 2,5 × sa durée, dans ces bornes
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -53,6 +59,10 @@ export class MapView {
     this.handlers = {};
     this.pointers = new Map();
     this.gesture = null;
+    this._live = new Set();  // gestes et animations en cours : le dernier dessin est déplacé comme une image
+    this._drawn = null;      // vue du dernier dessin {cx, cy, k, rot}
+    this._drawnAt = 0;
+    this._drawGap = DRAW_GAP_MS[0];
     this._build(plan);
     this._bindGestures();
     new ResizeObserver(() => this._onResize()).observe(container);
@@ -89,6 +99,10 @@ export class MapView {
     this.lSelect = layer('l-select');
     this.lCommunes = layer('l-communes');
     this.lGps = layer('l-gps');
+    // calques des tracés lourds : --u (un pixel en unités du plan) y est posé à chaque zoom, pas sur la racine, sinon
+    // le style des 3 858 numéros et points serait recalculé à chaque fois (une variable CSS s'hérite)
+    const lBldTiles = el('g', { class: 'l-bld-tiles' }, lBuildings);
+    this.strokeLayers = [lParcels, lLimits, lBldTiles, this.lRoute];
 
     const streets = this.data.streets;
     this.streetGroups = streets.map(() => []);
@@ -105,7 +119,7 @@ export class MapView {
       }
     };
     tiles(plan.parcels, 'parcels', lParcels);
-    if (plan.limits) el('path', { class: 'limits', d: plan.limits }, lLimits);
+    if (plan.limits) this.limitsEl = el('path', { class: 'limits', d: plan.limits }, lLimits);
     this.communeEls = [];
     for (const c of this.data.communes || []) {
       for (const lb of c.labels || []) {
@@ -117,7 +131,7 @@ export class MapView {
     groups(lTraces).forEach((g, i) => el('path', { class: 'trace', d: plan.traces[i] || '' }, g));
 
     // bâtiments liés : couleur de la rue de leurs adresses pointables
-    tiles(plan.buildingsOther, 'bld-other', lBuildings);
+    tiles(plan.buildingsOther, 'bld-other', lBldTiles);
     const gBld = groups(lBuildings);
     const owners = new Map();
     for (const a of this.data.addresses) {
@@ -341,12 +355,46 @@ export class MapView {
     if (!this._raf) {
       this._raf = requestAnimationFrame(() => {
         this._raf = 0;
-        this._render();
+        this._frame();
       });
     }
   }
 
+  // une image. Pendant un geste ou une animation : le dernier dessin, déplacé et mis à l'échelle par une
+  // transformation CSS, sans repeindre le SVG ; nouveau dessin (au plus toutes les _drawGap ms) si des bords vides
+  // apparaissent, si l'échelle a trop changé ou si le niveau de détail change. Sinon : dessin exact.
+  _frame() {
+    const d = this._drawn;
+    if (!this._live.size || !d || d.rot !== this.rotDeg) return this._render();
+    const r = this._rect();
+    const s = this.k / d.k;
+    const [tx, ty] = this._w2s(d.cx - this.cx, d.cy - this.cy);
+    const bare = s < 0.999 || Math.abs(tx) > ((s - 1) * r.width) / 2 + 1 || Math.abs(ty) > ((s - 1) * r.height) / 2 + 1;
+    const stale = s > 2 || s < 0.5 || this._level(this.k) !== this._level(d.k);
+    if ((bare || stale) && performance.now() - this._drawnAt >= this._drawGap) return this._render();
+    this.svg.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${s.toFixed(5)})`;
+    this.emit('view', { k: this.k, cx: this.cx, cy: this.cy });
+  }
+
+  _level(k) {
+    return [K_BUILDINGS, K_LABELS, K_PARCELS, K_NUMBERS].filter((t) => k >= t).length;
+  }
+
+  _liveStart(src) {
+    this._live.add(src);
+  }
+
+  // fin d'un geste ou d'une animation : dessin exact dès qu'il n'en reste aucun
+  _liveEnd(src) {
+    this._live.delete(src);
+    if (this._live.size) return;
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._raf = 0;
+    this._frame();
+  }
+
   _render() {
+    const t0 = performance.now();
     const r = this._rect();
     const w = r.width / this.k;
     const h = r.height / this.k;
@@ -358,6 +406,13 @@ export class MapView {
       this._lastK = this.k;
       this._applyScale();
     }
+    if (this.svg.style.transform) this.svg.style.transform = '';
+    this._drawn = { cx: this.cx, cy: this.cy, k: this.k, rot: this.rotDeg };
+    this._drawnAt = t0;
+    // durée du dessin, peinture comprise (image suivante) : règle l'écart entre deux dessins pendant un geste
+    requestAnimationFrame(() => {
+      this._drawGap = clamp(2.5 * (performance.now() - t0), ...DRAW_GAP_MS);
+    });
     this.emit('view', { k: this.k, cx: this.cx, cy: this.cy });
   }
 
@@ -380,9 +435,13 @@ export class MapView {
     }
   }
 
-  // tailles constantes à l'écran : texte recalculé (halos en em dans le CSS), traits en non-scaling-stroke
+  // tailles constantes à l'écran : texte recalculé (halos en em dans le CSS), épaisseur des traits en unités du plan
+  // (--u = un pixel) pour les tracés lourds, où vector-effect: non-scaling-stroke coûte cher dans WebKit
   _applyScale() {
     const k = this.k;
+    const u = `${(1 / k).toPrecision(5)}px`;
+    for (const g of this.strokeLayers) g.style.setProperty('--u', u);
+    this.limitsEl?.setAttribute('stroke-dasharray', `${(7 / k).toPrecision(4)} ${(5 / k).toPrecision(4)}`);
     const fs = clamp(13 / k, 2.2, 14);
     this.lNumbers.style.fontSize = `${fs}px`;
     const ls = clamp(12 / k, 2.6, 22);
@@ -391,7 +450,9 @@ export class MapView {
     this.lCommunes.style.fontSize = `${15 / k}px`;
     this._updateTags();
     this.svg.classList.toggle('z-low', k < K_NUMBERS);
+    this.svg.classList.toggle('z-mid', k < K_PARCELS);
     this.svg.classList.toggle('z-min', k < K_LABELS);
+    this.svg.classList.toggle('z-far', k < K_BUILDINGS);
     this._updateRing();
     this._updateMark();
   }
@@ -484,24 +545,34 @@ export class MapView {
   }
 
   animateTo(cx, cy, k, ms = 380) {
-    this._stopAnim();
+    this._stopAnim(false);
     if (reducedMotion.matches) ms = 0;
     const from = [this.cx, this.cy, Math.log(this.k)];
     const lk = Math.log(clamp(k, this.kMin, K_MAX));
     const t0 = performance.now();
+    this._liveStart('anim');
     const step = (now) => {
       const t = ms ? Math.min(1, (now - t0) / ms) : 1;
       const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
       this._set(from[0] + (cx - from[0]) * e, from[1] + (cy - from[1]) * e, Math.exp(from[2] + (lk - from[2]) * e));
-      this._render();
-      this._anim = t < 1 ? requestAnimationFrame(step) : 0;
+      if (t < 1) {
+        this._frame();
+        this._anim = requestAnimationFrame(step);
+      } else {
+        this._anim = 0;
+        this._liveEnd('anim');
+      }
     };
     this._anim = requestAnimationFrame(step);
   }
 
-  _stopAnim() {
+  // draw : dessin exact de la vue atteinte (false : un geste ou une autre animation prend la suite)
+  _stopAnim(draw = true) {
     if (this._anim) cancelAnimationFrame(this._anim);
     this._anim = 0;
+    if (!this._live.has('anim')) return;
+    if (draw) this._liveEnd('anim');
+    else this._live.delete('anim');
   }
 
   _onResize() {
@@ -645,6 +716,7 @@ export class MapView {
     document.addEventListener('gesturechange', (e) => {
       e.preventDefault();
       if (this.pointers.size || !c.contains(e.target)) return;  // tactile : déjà géré par les pointer events
+      this._wheelLive();
       this.zoomAt(e.scale / (this._gestureScale || 1), e.clientX, e.clientY);
       this._gestureScale = e.scale;
     }, { passive: false });
@@ -654,7 +726,10 @@ export class MapView {
 
   _down(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    this._stopAnim();
+    if (this._anim) {  // le doigt arrête l'animation : le dessin exact attendra la fin du geste
+      this._stopAnim(false);
+      this._liveStart('gesture');
+    }
     const p = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY };
     this.pointers.set(e.pointerId, p);
     if (this.pointers.size === 1) {
@@ -683,7 +758,7 @@ export class MapView {
     const my = (a.y + b.y) / 2;
     const [ax, ay] = this.toWorld(mx, my);
     this.pinch = { d0: Math.max(10, Math.hypot(a.x - b.x, a.y - b.y)), k0: this.k, ax, ay };
-    this._setMoving(true);
+    this._liveStart('gesture');
     this.emit('userzoom');  // un pincement est un zoom : il ne coupe pas le mode suivre
   }
 
@@ -705,7 +780,7 @@ export class MapView {
       clearTimeout(this._lpTimer);
       try { this.container.setPointerCapture(e.pointerId); } catch { /* idem */ }
       this.container.classList.add('dragging');
-      this._setMoving(true);
+      this._liveStart('gesture');
       this.emit('userpan');
       this._pan(p.x - p.x0, p.y - p.y0);
       return;
@@ -748,7 +823,7 @@ export class MapView {
     this.pinch = null;
     this.gesture = null;
     this.container.classList.remove('dragging');
-    this._setMoving(false);
+    if (this._live.has('gesture')) this._liveEnd('gesture');
     if (!cancelled && g && !g.moved && !g.multi && !g.long) this._tap(e.clientX, e.clientY);
   }
 
@@ -776,14 +851,19 @@ export class MapView {
 
   _wheel(e) {
     e.preventDefault();
-    this._stopAnim();
+    this._wheelLive();
     let dy = e.deltaY;
     if (e.deltaMode === 1) dy *= 16;
     else if (e.deltaMode === 2) dy *= 400;
     this.zoomAt(Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX, e.clientY);
-    this._setMoving(true);
+  }
+
+  // molette, pincement du trackpad : un geste qui finit 160 ms après le dernier événement
+  _wheelLive() {
+    this._stopAnim(false);
+    this._liveStart('wheel');
     clearTimeout(this._wheelTimer);
-    this._wheelTimer = setTimeout(() => this._setMoving(false), 160);
+    this._wheelTimer = setTimeout(() => this._liveEnd('wheel'), 160);
   }
 
   _key(e) {
@@ -804,9 +884,5 @@ export class MapView {
       e.preventDefault();
       fn();
     }
-  }
-
-  _setMoving(on) {
-    this.svg.classList.toggle('moving', on);
   }
 }

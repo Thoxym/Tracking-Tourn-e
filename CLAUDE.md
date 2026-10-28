@@ -668,6 +668,37 @@ Les deux communes s'ajoutent à Neyron sur le même plan. Elles ne touchent pas 
   - **Import de secteur** : voie reconnue par son libellé (« Route de Genève (Beynost) ») ou par son nom s'il est unique ; un nom partagé sans précision prend la commune des autres lignes du fichier si elles sont toutes dans la même, sinon la ligne est signalée (« voie présente dans plusieurs communes : précisez … »).
   - **Tailles** : `addresses.json` 583 Ko (89 Ko compressé), `plan.json` 2,6 Mo (0,9 Mo compressé). Build complet ≈ 95 s (réseau routier ≈ 80 s).
   - **Tests** : attendus adaptés (libellés avec commune, colonne `commune` du rapport, totaux par commune dans `plan.spec.js`) ; import de secteur avec un nom partagé, seul (refusé) puis précisé (accepté) ; course corrigée dans le test d'anomalie (lecture du motif avant la fin de l'écriture). Suite complète (3 workers) : 164 réussis, 1 réussi au second essai, 5 ignorés. Playwright ne rend pas toujours la main après le dernier test (WebKit, §10) : vérifier que les 170 tests ont un résultat.
+- [x] **C2 — Fluidité du zoom** (28/10/2026, demande de l'utilisateur : l'app se fige quand on zoome et dézoome) ; publié le 28/10/2026, avec l'accord de l'utilisateur.
+  - **Constat** (mesures, WebKit et Chromium) : chaque image d'un pincement redessinait tout le SVG (12 800 éléments). Masquer un calque ne gagnait que 10 à 25 %. Au niveau de la rue, le dessin limité à l'écran (C1) ne laissait presque plus rien à alléger.
+  - **Geste sans nouveau dessin** (`map._frame`) :
+    - pendant un glisser, un pincement, la molette, un pincement du trackpad ou une animation (`animateTo`), le dernier dessin est déplacé et mis à l'échelle par une transformation CSS du `<svg>` (`will-change: transform`, calque composé par la carte graphique) ;
+    - le plan est redessiné au lâcher (`_liveEnd`), ou pendant le geste si des bords vides apparaissent (dézoom, glisser), si l'échelle a doublé ou diminué de moitié, ou si le niveau de détail change ;
+    - ce nouveau dessin a lieu au plus toutes les 2,5 × sa durée mesurée, entre 200 et 1200 ms (`DRAW_GAP_MS`) ;
+    - les sources en cours sont dans `map._live` (`gesture`, `wheel`, `anim`) ; un doigt posé pendant une animation la remplace sans dessin intermédiaire ;
+    - `_stopAnim()` dessine la vue atteinte (`_stopAnim(false)` : un geste ou une autre animation prend la suite) ;
+    - `toWorld`, `toScreen` et le toucher suivent la vue logique (`cx`, `cy`, `k`), qui correspond à l'image affichée ;
+    - le rendu « rapide » pendant le geste (`.map.moving`) est retiré : il forçait deux dessins complets par geste.
+  - **Niveaux de détail** (`K_PARCELS = 0.5`, `K_BUILDINGS = 0.25`, classes `z-mid` et `z-far`) :
+    - sous 0,5 px/m, pas de parcelles ;
+    - sous 0,25 px/m (vue d'ensemble), ni bâtiments ni points hors de la tournée active. Ces points restent affichés pendant la composition sur la carte (`#app[data-mode="select"]`).
+  - **Épaisseur des traits** :
+    - les tracés lourds en sommets (parcelles, bâtiments sans adresse, limites, itinéraire) n'utilisent plus `vector-effect: non-scaling-stroke`, coûteux dans WebKit. Leur épaisseur vaut `calc(N * var(--u))`, où `--u` (un pixel en unités du plan) est posé à chaque zoom sur leurs seuls calques (`map.strokeLayers`, dont `l-bld-tiles`) ;
+    - les tirets des limites sont posés par attribut ;
+    - les milliers de petits éléments (points, bâtiments liés, pastilles) gardent `non-scaling-stroke` : changer `--u` sur leurs calques recalculait des milliers de styles, ce qui était plus lent que l'ancienne méthode.
+  - **Mesures** (dessin complet, iPhone 13 simulé ; vue d'ensemble / k = 0,3 / 0,7 / 1,5) :
+
+    | Dessin complet | Avant | Après |
+    |---|---|---|
+    | WebKit | 584 / 641 / 624 / 527 ms | 216 / 549 / 562 / 499 ms |
+    | Chromium | 83 / 75 / 65 / 53 ms | 62 / 67 / 50 / 50 ms |
+
+    Une image de geste coûte 33 ms sous Chromium, soit deux images d'écran (attente de la mesure) : la transformation ne redessine rien. Le WebKit de Windows compose sans carte graphique : une image de geste y coûte presque un dessin, et cela ne se juge que sur l'iPhone.
+  - **Tests** :
+    - suite complète (3 workers) : 161 réussis, 4 réussis au second essai (WebKit), 5 ignorés, aucun échec. Deux de ces seconds essais sont des clics bloqués (§10) ; GPS repassé 20 fois sur 20 ;
+    - « hors itinéraire » (`guidage.spec.js`) échouait déjà avant C2 (2 fois sur 8), pour deux raisons :
+      - le refus du vrai GPS par WebKit remplaçait le toast « Itinéraire recalculé » : le test vérifie désormais les toasts émis ;
+      - le trajet dépend du budget de calcul, et le point décalé de 78 m retombait parfois près du tracé : il est maintenant décalé de 80 m perpendiculairement au tracé ;
+    - après correction : 16 sur 16.
 
 ---
 
@@ -917,12 +948,12 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
   4. noms de rues ;
   5. numéros (contexte `ctx` en gris, non cliquables) ;
   6. calque GPS (cercle de précision, point).
-- À chaque changement de zoom : `fontSize = clamp(13/k, 2.2, 14)` (`k` = pixels par mètre), idem pour les halos (`paint-order: stroke`). Les traits utilisent `vector-effect: non-scaling-stroke`.
+- À chaque changement de zoom : `fontSize = clamp(13/k, 2.2, 14)` (`k` = pixels par mètre), idem pour les halos (`paint-order: stroke`). Les petits éléments (points, bâtiments liés, pastilles) utilisent `vector-effect: non-scaling-stroke`. Les tracés lourds (parcelles, bâtiments sans adresse, limites, itinéraire) ont une épaisseur en `calc(N * var(--u))`, avec `--u` posé sur leurs calques à chaque zoom (C2).
 - Barre d'échelle dynamique.
 - **Tap** : numéro pointable le plus proche à 22 px max (calcul en coordonnées écran, pas de cible par élément).
 - **Légende** : case de couleur = afficher/masquer la rue ; nom = sélectionner (surbrillance, reste atténué, zoom avec un cadre ≥ 220 m qui ne passe pas sous la légende) ; progression + « Toute la rue faite ». Repliable, repliée par défaut sur mobile.
 - Cibles tactiles ≥ 44 px pour tous les boutons.
-- **Niveaux de zoom** (`k` en px/m, constantes en tête de `map.js`) : sous `K_NUMBERS = 0.9`, des points de taille constante remplacent les numéros (vue d'avancement) et un tap rapproche (×2,5) au lieu de pointer ; sous `K_LABELS = 0.4`, pas d'étiquettes ; `K_MAX = 40`. Double tap sur une zone vide : zoom ×2. Appui long (600 ms) : événement `longpress` (position simulée du debug, phase 7).
+- **Niveaux de zoom** (`k` en px/m, constantes en tête de `map.js`) : sous `K_NUMBERS = 0.9`, des points de taille constante remplacent les numéros (vue d'avancement) et un tap rapproche (×2,5) au lieu de pointer ; sous `K_PARCELS = 0.5`, pas de parcelles ; sous `K_LABELS = 0.4`, pas d'étiquettes ; sous `K_BUILDINGS = 0.25`, ni bâtiments ni points hors tournée (C2) ; `K_MAX = 40`. Pendant un geste ou une animation, le dernier dessin est déplacé par une transformation CSS, et le plan n'est redessiné qu'au lâcher ou de loin en loin (C2). Double tap sur une zone vide : zoom ×2. Appui long (600 ms) : événement `longpress` (position simulée du debug, phase 7).
 - Points de taille constante : trait de longueur nulle (`M x yh0.01`) à bout rond en `non-scaling-stroke`, sans recalcul au zoom.
 - **API de `MapView`** pour les phases suivantes : événements `tap` ({address|null, world}), `longpress`, `userpan` (coupe le mode suivre), `view`, `ready` ; `selectAddress(id)`, `selectStreet(i)`, `setStreetVisible(i, bool)`, `fitBounds()`, `ensureVisible()`, `setPadding()`, `toScreen()` / `toWorld()`, calque `lGps`, `addrEls` / `buildingEls` (classes de statut `st-fait`, `st-a_repasser` déjà stylées). `window.neyronApp = {map, ui, data}` pour le debug et les tests.
 - Thème : préférence par appareil dans `localStorage['neyron-tournees.theme']` (clé préfixée), appliquée avant affichage par `theme-init.js` (script classique externe : CSP sans inline).
@@ -1089,6 +1120,9 @@ Repli si une rue pose problème : mettre son index dans `TRACE_FALLBACK_STREETS`
 - **Séparateurs des listes groupées** : `.group > * + *::before` dessine le trait fin ; un enfant direct ne peut donc pas utiliser son propre `::before` (pastille de couleur de l'ordre de passage : élément `.order-dot`).
 - **`<dialog>` en bas d'écran** : les styles du navigateur centrent un dialogue modal et bornent sa hauteur ; la feuille d'actions se place en `position: fixed; inset: auto 0 0 0`, sans `max-height`.
 - **Animations dans les tests** : mesurer un zoom après un délai fixe est instable sous WebKit chargé. Attendre la fin de l'animation (`map._anim` nul, `k` modifié).
+- **Variable CSS posée sur la racine du plan** : elle s'hérite, donc la changer recalcule le style de tous les descendants, soit les 12 800 éléments, textes compris. C'était plus lent que l'ancienne méthode. La poser sur les seuls calques qui l'utilisent (`map.strokeLayers`).
+- **Pendant un geste, le `<svg>` porte une transformation CSS** (`map._frame`) : la vue logique (`cx`, `cy`, `k`) est déjà la vue finale. Mesurer ou capturer le dessin exact après `_stopAnim()` ou la fin du geste. Sous WebKit Windows, sans carte graphique, une image de geste coûte presque un dessin : ce n'est pas représentatif de l'iPhone.
+- **Captures Playwright et CSP** : `page.screenshot` injecte une feuille de style (curseur de texte), que la CSP refuse. D'où des erreurs « Refused to apply a stylesheet » dans la console, qui ne viennent pas de l'app.
 - **Safari et pincement de page** : iOS ignore `user-scalable=no` ; les `gesturestart/change` sont bloqués au niveau du document, et sur macOS le pincement trackpad (événements `gesture*` sans pointeur actif) zoome la carte.
 - **v0.2 (PDF reportlab)** : le mode de rendu du texte (`Tr`) persiste → entourer les halos de `saveState()` / `restoreState()` ; exposants et indices Unicode non rendus.
 
@@ -1351,3 +1385,8 @@ B. **Plus tard — deuxième carte : Lyon 3e autour de la gare Part-Dieu.**
   - parcelle déduite du point d'entrée, mais pas des positions « segment » ;
   - dessin limité à l'écran plutôt qu'un passage au canvas : même rendu, même code de gestes, coût revenu au niveau de Neyron seule ;
   - Miribel n'est pas ajoutée (pas demandée).
+- **28/10/2026** — Commit `5fc4795` (C1, publié). C2, à la demande de l'utilisateur, qui constate des gels au zoom :
+  - pendant les gestes, le dessin est déplacé comme une image, sans nouveau dessin (comme Plans ou Leaflet). Seul le dessin au lâcher reste à payer, et les niveaux de détail le raccourcissent ;
+  - niveaux de détail proposés par l'utilisateur : ni parcelles ni bâtiments au dézoom, ni points hors tournée en vue d'ensemble ;
+  - `non-scaling-stroke` retiré seulement pour les tracés lourds : mesuré, il est plus rapide de le garder pour les milliers de petits éléments ;
+  - les autres pistes, à reprendre si l'iPhone montre encore des à-coups : regrouper les 3 858 points par rue et par statut, des parcelles simplifiées pour les zooms moyens, un fond dessiné en image.
